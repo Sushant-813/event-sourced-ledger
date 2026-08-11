@@ -848,6 +848,70 @@ Negative
 
 ---
 
+# ADR-019
+
+## Title
+
+Hibernate Schema Validation Enabled
+
+### Status
+
+Accepted
+
+### Context
+
+ADR-014 set `spring.jpa.hibernate.ddl-auto=none` in Phase 0 because no JPA entities existed
+at that point.
+
+ADR-006 establishes Flyway as the sole authority for schema evolution.
+
+ADR-014 explicitly deferred the adoption of `ddl-auto=validate` to Phase 1, when the first
+JPA entity would be introduced.
+
+Phase 1 introduces the `Account` entity and the `V1__Create_Accounts.sql` migration.
+
+### Decision
+
+Change `spring.jpa.hibernate.ddl-auto` from `none` to `validate` in
+`application.properties`.
+
+Hibernate will verify that every JPA entity mapping is consistent with the database schema
+produced by Flyway migrations on each application startup.
+
+Flyway remains the sole authority for schema creation and evolution.
+Hibernate does not create, modify, or drop any schema objects.
+
+### Alternatives Considered
+
+- Retain `ddl-auto=none`: rejected; mapping errors between the entity and the schema would
+  remain silently undetected at startup
+- `ddl-auto=update`: rejected; would allow Hibernate to modify the schema outside version
+  control, violating ADR-006
+
+### Rationale
+
+With the `Account` entity in place, `ddl-auto=validate` provides an important safety net:
+it detects any divergence between the JPA entity mapping and the schema produced by Flyway
+migrations immediately at startup, before the application serves any request.
+
+This completes the schema management strategy originally defined in ADR-014 and ADR-006:
+Flyway controls the schema; Hibernate validates against it.
+
+### Consequences
+
+Positive
+
+- Mapping errors between the `Account` entity and the `accounts` table are caught at startup
+- No risk of silent schema drift between JPA entity declarations and the migrated database
+- Consistent with ADR-006 and ADR-014; no new schema management authority is introduced
+
+Negative
+
+- Application startup will fail if Flyway migrations and JPA entity definitions are out of
+  sync; this is the intended behavior and not a defect
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

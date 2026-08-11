@@ -111,6 +111,96 @@ Validation handlers (`MethodArgumentNotValidException`, `ConstraintViolationExce
 - ADR-016: Spring Boot Version Selection (3.5.16)
 - ADR-017: Database Credential Environment Variable Names
 
+Phase 1 — Account Module
+
+---
+
+## 2026-08-12
+
+### Phase 1 — Account Module: COMPLETED
+
+The Account domain has been fully implemented and verified following the approved Phase 1
+implementation plan.
+
+#### What Was Implemented
+
+**Database**
+
+- `V1__Create_Accounts.sql` applied successfully; `accounts` table created with seven columns,
+  `NOT NULL` and `CHECK` constraints, and the `UK_accounts_account_number` unique constraint
+- `spring.jpa.hibernate.ddl-auto` changed from `none` to `validate`; Hibernate now verifies
+  the `Account` entity mapping against the live schema on every startup (see ADR-019)
+
+**Domain**
+
+- `Account` JPA entity (`com.ledger.account.entity`) with `@PreUpdate`-managed `updatedAt`
+  and `@Column(updatable = false)` on `createdAt`
+- `AccountType` enum (`SAVINGS`, `CURRENT`) with `@JsonCreator` for clean Jackson
+  deserialization error messages
+- `AccountStatus` enum (`ACTIVE`, `FROZEN`, `CLOSED`)
+- `AccountRepository` extending `JpaRepository` with `findByAccountNumber` and
+  `existsByAccountNumber` derived query methods
+
+**Application / Service**
+
+- `AccountService` interface defining the seven-method contract
+- `AccountServiceImpl` enforcing all business rules:
+  - Duplicate `account_number` prevention (pre-check + `DataIntegrityViolationException`
+    translation for concurrency safety)
+  - Account existence checks on all lookup and lifecycle operations
+  - Status-transition rules: `ACTIVE → FROZEN`, `ACTIVE → CLOSED`, `FROZEN → ACTIVE`,
+    `FROZEN → CLOSED`; `CLOSED` is terminal — all transitions from `CLOSED` are rejected
+
+**Presentation**
+
+- `AccountController` exposing seven endpoints:
+  - `POST /accounts` — create account (201)
+  - `GET /accounts` — paginated list (200)
+  - `GET /accounts/{id}` — get by internal ID (200)
+  - `GET /accounts/by-number/{accountNumber}` — get by business account number (200)
+  - `PATCH /accounts/{id}/freeze` — freeze account (200)
+  - `PATCH /accounts/{id}/activate` — activate account (200)
+  - `PATCH /accounts/{id}/close` — close account (200)
+- `CreateAccountRequest` record with Jakarta Validation constraints (`@NotBlank`, `@Size`,
+  `@NotNull`)
+- `AccountResponse` Java 21 record (immutable DTO)
+- `AccountMapper` for entity-to-response translation (manual; no MapStruct)
+
+**Exception Handling**
+
+- Three new business exception classes in `com.ledger.account.exception`:
+  - `AccountNotFoundException` → 404
+  - `DuplicateAccountNumberException` → 409
+  - `InvalidAccountStatusTransitionException` → 422
+- `GlobalExceptionHandler` extended with three corresponding `@ExceptionHandler` methods
+- `DataIntegrityViolationException` from concurrent duplicate inserts is caught in
+  `AccountServiceImpl.createAccount` and translated to `DuplicateAccountNumberException`
+  (409), not a 500
+
+**OpenAPI / Swagger**
+
+- All seven account endpoints documented in `AccountController` with `@Tag`, `@Operation`,
+  `@ApiResponse`, and `@Parameter` annotations
+- Endpoints visible in Swagger UI at `/swagger-ui.html`
+- `OpenApiConfig.java` version string unchanged (`v0.1`); version bump deferred to Phase 10
+
+**Testing**
+
+- `AccountServiceImplTest` — 17 unit tests (Mockito, no Spring context, no database) covering
+  all service methods including status-transition branches and concurrent-duplicate translation
+- `AccountControllerTest` — 14 API-layer tests (MockMvc standalone setup + `GlobalExceptionHandler`
+  advice) covering all seven endpoints and all error scenarios
+- `LedgerApplicationTests` — context smoke test continues to pass; Flyway V1 migration verified
+  at startup; `ddl-auto=validate` confirms entity-to-schema mapping
+
+#### Verification
+
+`mvn clean test` — **32 tests run, 0 failures, 0 errors, 0 skipped** — BUILD SUCCESS
+
+#### New ADRs Recorded
+
+- ADR-019: Hibernate Schema Validation Enabled (`ddl-auto=none` → `ddl-auto=validate`)
+
 Next Milestone
 
-Phase 1 — Account Module
+Phase 2 — Ledger Foundation

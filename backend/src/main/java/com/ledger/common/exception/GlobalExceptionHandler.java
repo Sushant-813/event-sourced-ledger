@@ -17,6 +17,9 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import com.ledger.account.exception.AccountNotFoundException;
+import com.ledger.account.exception.DuplicateAccountNumberException;
+import com.ledger.account.exception.InvalidAccountStatusTransitionException;
 
 import java.util.stream.Collectors;
 
@@ -182,6 +185,88 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 path
         );
         return ResponseEntity.badRequest().body(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // 404 — Account not found
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handles account lookups where the requested account does not exist.
+     */
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ResponseEntity<ApiError> handleAccountNotFound(
+            AccountNotFoundException ex,
+            HttpServletRequest request) {
+
+        String path = request.getRequestURI();
+
+        log.warn("404 Account not found on {}: {}", path, ex.getMessage());
+
+        ApiError body = ApiError.of(
+                HttpStatus.NOT_FOUND.value(),
+                HttpStatus.NOT_FOUND.getReasonPhrase(),
+                ex.getMessage(),
+                path
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // 409 — Duplicate account number
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handles attempts to create an account with an account number that
+     * already exists.
+     */
+    @ExceptionHandler(DuplicateAccountNumberException.class)
+    public ResponseEntity<ApiError> handleDuplicateAccountNumber(
+            DuplicateAccountNumberException ex,
+            HttpServletRequest request) {
+
+        String path = request.getRequestURI();
+
+        log.warn("409 Duplicate account number on {}: {}", path, ex.getMessage());
+
+        ApiError body = ApiError.of(
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                ex.getMessage(),
+                path
+        );
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // 422 — Invalid account status transition
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handles business-rule violations involving the account status lifecycle.
+     */
+    @ExceptionHandler(InvalidAccountStatusTransitionException.class)
+    public ResponseEntity<ApiError> handleInvalidAccountStatusTransition(
+            InvalidAccountStatusTransitionException ex,
+            HttpServletRequest request) {
+
+        String path = request.getRequestURI();
+
+        log.warn("422 Invalid account status transition on {}: {}",
+                path, ex.getMessage());
+
+        ApiError body = ApiError.of(
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
+                ex.getMessage(),
+                path
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(body);
     }
 
     // -------------------------------------------------------------------------
