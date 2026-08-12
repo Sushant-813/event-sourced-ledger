@@ -82,16 +82,17 @@ Every implementation decision should align with the requirements defined in this
 
 ## Testing
 
-Initial implementation will include:
+The project uses the following testing technologies:
 
 - JUnit 5
+- Mockito (unit tests, no database)
+- Spring Boot Test (context smoke test)
+- MockMvc (API layer tests)
 
 Future phases may introduce:
 
-- Spring Boot Test
-- MockMvc
-- Integration Testing
-- Testcontainers
+- Testcontainers (integration testing against a real database)
+- Additional integration testing strategies
 
 ---
 

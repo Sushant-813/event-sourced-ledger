@@ -204,3 +204,107 @@ implementation plan.
 Next Milestone
 
 Phase 2 — Ledger Foundation
+
+---
+
+## 2026-08-13
+
+### Phase 2 — Ledger Foundation: COMPLETED
+
+The Transaction and LedgerEntry domains have been fully implemented and verified.
+The accounting foundation for double-entry bookkeeping is operational.
+
+#### What Was Implemented
+
+**Database**
+
+- `V2__Create_Transactions.sql` applied successfully; `transactions` table created with five
+  columns, `NOT NULL` constraints, a `UK_transactions_reference_number` unique constraint,
+  and `CHECK` constraints on `transaction_type` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`) and
+  `status` (`PENDING`, `COMPLETED`, `FAILED`)
+- `V3__Create_Ledger_Entries.sql` applied successfully; `ledger_entries` table created with
+  six columns, `NUMERIC(19,2)` precision for monetary amounts, `FK_ledger_entries_transaction`
+  and `FK_ledger_entries_account` foreign keys (both `ON DELETE RESTRICT`), a
+  `CK_ledger_entries_entry_type` check constraint (`DEBIT`, `CREDIT`), a
+  `CK_ledger_entries_amount` check constraint (`amount > 0`), and two indexes:
+  `IDX_ledger_entries_transaction_id` and `IDX_ledger_entries_account_id`
+- `spring.jpa.hibernate.ddl-auto=validate` remains in effect; Hibernate validates `Transaction`
+  and `LedgerEntry` entity mappings against the Flyway-managed schema on every startup
+- PostgreSQL schema version is now 3; Flyway validates V1, V2, and V3 successfully at startup
+
+**Domain**
+
+- `Transaction` JPA entity (`com.ledger.transaction.entity`) with fields: `id`, `referenceNumber`,
+  `transactionType`, `status`, `createdAt`; `createdAt` is non-updatable
+- `TransactionType` enum: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER`
+- `TransactionStatus` enum: `PENDING`, `COMPLETED`, `FAILED`
+- `LedgerEntry` JPA entity (`com.ledger.ledger.entity`) with fields: `id`, `transaction`,
+  `account`, `entryType`, `amount`, `createdAt`; intentionally immutable — no setters,
+  no update lifecycle; `createdAt` is non-updatable
+- `EntryType` enum: `DEBIT`, `CREDIT`
+
+**Persistence**
+
+- `TransactionRepository` extending `JpaRepository<Transaction, Long>` with derived query
+  methods: `findByReferenceNumber(String)` and `existsByReferenceNumber(String)`
+- `LedgerEntryRepository` extending `JpaRepository<LedgerEntry, Long>` with derived query
+  methods: `findByTransactionId(Long)` and `findByAccountId(Long)`
+
+**Application / Service**
+
+- `LedgerService` interface defining the `recordTransaction(Transaction, List<LedgerEntry>)` contract
+- `LedgerServiceImpl` implementing double-entry validation and persistence:
+  - Null or empty ledger entry collections are rejected with `IllegalArgumentException`
+  - Invalid amounts (null, zero, or negative) are rejected with `InvalidLedgerEntryException`
+  - Missing at least one DEBIT entry is rejected with `UnbalancedLedgerException`
+  - Missing at least one CREDIT entry is rejected with `UnbalancedLedgerException`
+  - Debit/credit imbalance (total debits ≠ total credits) is rejected with `UnbalancedLedgerException`
+  - Transaction is persisted via `TransactionRepository.save()` before ledger entries
+  - Ledger entries are persisted via `LedgerEntryRepository.saveAll()`
+  - The entire operation is `@Transactional`
+
+**Exception Handling**
+
+- Two new business exception classes in `com.ledger.ledger.exception`:
+  - `InvalidLedgerEntryException` → 422 Unprocessable Entity (individual entry data invalid)
+  - `UnbalancedLedgerException` → 422 Unprocessable Entity (double-entry balance invariant violated)
+- `GlobalExceptionHandler` extended with two corresponding `@ExceptionHandler` methods:
+  `handleInvalidLedgerEntry` and `handleUnbalancedLedger`
+
+**Testing**
+
+- `LedgerServiceImplTest` — 13 unit tests (Mockito, no Spring context, no database) covering:
+  - Successful transaction recording with balanced entries
+  - Null and empty entry collection rejection (`IllegalArgumentException`)
+  - Invalid amount rejection (`InvalidLedgerEntryException`)
+  - Missing DEBIT rejection (`UnbalancedLedgerException`)
+  - Missing CREDIT rejection (`UnbalancedLedgerException`)
+  - Debit/credit imbalance rejection (`UnbalancedLedgerException`)
+  - Persistence ordering: transaction saved before ledger entries (InOrder verification)
+  - No repository calls on validation failure
+
+#### Verification
+
+`mvn test` — **45 tests run, 0 failures, 0 errors, 0 skipped** — BUILD SUCCESS
+
+Spring Boot startup verified against PostgreSQL: Flyway applies and validates V1, V2, and V3;
+Hibernate validates `Account`, `Transaction`, and `LedgerEntry` entity mappings at startup.
+
+#### Architectural Boundary
+
+Phase 2 intentionally does NOT contain:
+
+- REST controllers or endpoints for transactions or ledger entries
+- Request/response DTOs for transactions or ledger entries
+- Multi-currency support (monetary amounts are single-currency `NUMERIC(19,2)`)
+- LedgerEntry mutability: entries are immutable by design; no setters or update workflows exist
+
+#### New ADRs Recorded
+
+- ADR-020: Monetary Amount Precision — `NUMERIC(19,2)`
+- ADR-021: LedgerEntry Immutability
+- ADR-022: Double-Entry Validation Exception Semantics
+
+Next Milestone
+
+Phase 3 — Event Store

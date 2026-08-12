@@ -912,6 +912,175 @@ Negative
 
 ---
 
+---
+
+# ADR-020
+
+## Title
+
+Monetary Amount Precision — `NUMERIC(19,2)`
+
+### Status
+
+Accepted
+
+### Context
+
+Phase 2 introduces the `ledger_entries` table which must store monetary amounts.
+
+The precision of the `amount` column determines the range and decimal accuracy of every
+monetary value in the system.
+
+### Decision
+
+Use `NUMERIC(19, 2)` for the `amount` column in `ledger_entries`.
+
+### Alternatives Considered
+
+- `NUMERIC(19, 4)`: four decimal places commonly used in multi-currency systems to preserve
+  exchange rate precision; rejected — the project does not currently support multiple currencies
+- `DECIMAL(10, 2)`: insufficient for large monetary values in global financial contexts
+- `BIGINT` (store as minor units / paise): would require application-layer conversion; adds
+  unnecessary complexity for the current scope
+
+### Rationale
+
+`NUMERIC(19, 2)` supports values up to 99,999,999,999,999,999.99 with two decimal places,
+which is sufficient for single-currency monetary amounts in the scope of this project.
+
+Four-decimal precision would be speculative scope because multi-currency support is explicitly
+deferred to a future phase. Introducing it now would add complexity without delivering value.
+
+### Consequences
+
+Positive
+
+- Sufficient precision for all single-currency monetary amounts
+- Standard choice for financial systems without multi-currency requirements
+- Clean two-decimal representation matches accounting convention
+
+Negative
+
+- If multi-currency support is introduced in a future phase, a schema migration will be
+  required to adjust decimal precision
+
+---
+
+# ADR-021
+
+## Title
+
+LedgerEntry Immutability
+
+### Status
+
+Accepted
+
+### Context
+
+Double-entry accounting treats ledger entries as permanent historical records.
+
+Once a ledger entry has been persisted to record a debit or credit against a transaction,
+modifying it would compromise financial auditability and integrity.
+
+### Decision
+
+`LedgerEntry` is designed as an immutable entity: it exposes no setters, no `@PreUpdate`
+lifecycle callbacks, and its `createdAt` field is declared as non-updatable.
+
+All fields are set at construction time. No workflow for updating an existing ledger entry
+exists or should be introduced.
+
+### Alternatives Considered
+
+- Mutable entity with setters: rejected — updating a posted accounting entry breaks
+  accounting integrity and auditability
+
+### Rationale
+
+Financial correctness requires that ledger entries, once recorded, are never silently
+modified. This is consistent with the project's core principles of immutable history and
+complete auditability (ADR-002, PRD Principle 1, ARCHITECTURE Principle 2).
+
+### Consequences
+
+Positive
+
+- Ledger history is an accurate, tamper-evident audit trail
+- Consistent with event-sourcing principles applied to the accounting layer
+
+Negative
+
+- Corrections to erroneous entries must be handled as new compensating entries; no
+  in-place correction workflow exists
+
+---
+
+# ADR-022
+
+## Title
+
+Double-Entry Validation Exception Semantics
+
+### Status
+
+Accepted
+
+### Context
+
+`LedgerServiceImpl.validateEntries()` must enforce several distinct pre-conditions before
+persisting a transaction. Different failure conditions have meaningfully different semantics,
+and a single exception type would make it harder for callers (and future REST clients) to
+distinguish between them.
+
+### Decision
+
+The following exception mapping is used for `LedgerServiceImpl` validation failures:
+
+| Condition | Exception |
+|-----------|-----------|
+| Null or empty entry collection | `IllegalArgumentException` |
+| Entry amount is null, zero, or negative | `InvalidLedgerEntryException` (422) |
+| At least one DEBIT entry is missing | `UnbalancedLedgerException` (422) |
+| At least one CREDIT entry is missing | `UnbalancedLedgerException` (422) |
+| Total debits ≠ total credits | `UnbalancedLedgerException` (422) |
+
+### Alternatives Considered
+
+- Use `InvalidLedgerEntryException` for all failures: rejected — structural problems
+  (null collection) and balance violations have different remediation paths
+- Use a single generic exception: rejected — reduces API client ability to distinguish
+  between bad input data and accounting imbalance
+
+### Rationale
+
+Null/empty collections represent a programming contract violation (caller error), so
+`IllegalArgumentException` is the appropriate Java idiom.
+
+Invalid amounts represent invalid data on an individual entry, so `InvalidLedgerEntryException`
+accurately describes the failure at the entry level.
+
+Missing DEBIT, missing CREDIT, and debit/credit imbalance are all accounting balance
+violations that share the same logical category, so `UnbalancedLedgerException` is
+correct for all three cases.
+
+Both `InvalidLedgerEntryException` and `UnbalancedLedgerException` are handled by
+`GlobalExceptionHandler` and returned to REST clients as HTTP 422 Unprocessable Entity.
+
+### Consequences
+
+Positive
+
+- Exception types accurately reflect the nature of each failure
+- REST clients receive distinct, meaningful 422 error messages
+- Service tests can verify exact exception types per condition
+
+Negative
+
+- More exception types to maintain; acceptable given the clear semantic separation
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

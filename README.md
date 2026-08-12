@@ -21,8 +21,8 @@ alone.
 |-------|-------------|--------|
 | Phase 0 | Project Foundation | **COMPLETED** (2026-08-10) |
 | Phase 1 | Account Module | **COMPLETED** (2026-08-12) |
-| Phase 2 | Ledger Foundation | **NEXT** |
-| Phase 3 | Event Store | Pending |
+| Phase 2 | Ledger Foundation | **COMPLETED** (2026-08-13) |
+| Phase 3 | Event Store | **NEXT** |
 | Phase 4 | Deposit & Withdrawal Engine | Pending |
 | Phase 5 | Transfer Engine | Pending |
 | Phase 6 | Balance Reconstruction | Pending |
@@ -56,7 +56,37 @@ fully tested:
 
 ```
 mvn clean test
-Tests run: 32, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 45, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+---
+
+### Phase 2 — Ledger Foundation (completed)
+
+Phase 2 built the accounting foundation on top of the Account domain:
+
+- `Transaction` JPA entity with `TransactionType` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`) and
+  `TransactionStatus` (`PENDING`, `COMPLETED`, `FAILED`) enums
+- `LedgerEntry` JPA entity with `EntryType` (`DEBIT`, `CREDIT`) enum — **intentionally
+  immutable**: no setters, no update lifecycle
+- PostgreSQL `transactions` table managed by Flyway migration `V2__Create_Transactions.sql`
+- PostgreSQL `ledger_entries` table managed by Flyway migration `V3__Create_Ledger_Entries.sql`;
+  monetary amounts stored as `NUMERIC(19,2)` (see ADR-020)
+- `TransactionRepository` and `LedgerEntryRepository` (Spring Data JPA)
+- `LedgerService` and `LedgerServiceImpl` enforcing all double-entry rules:
+  - Null/empty entry collections rejected with `IllegalArgumentException`
+  - Invalid amounts (null, zero, negative) rejected with `InvalidLedgerEntryException` (422)
+  - Missing DEBIT or CREDIT entries rejected with `UnbalancedLedgerException` (422)
+  - Total debits must equal total credits; imbalance rejected with `UnbalancedLedgerException` (422)
+- `GlobalExceptionHandler` extended with handlers for `InvalidLedgerEntryException` and
+  `UnbalancedLedgerException`
+- **No REST endpoints** — Phase 2 is a service and persistence layer only
+
+**Verified result:**
+
+```
+mvn test
+Tests run: 45, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -68,8 +98,9 @@ The backend follows a strict four-layer architecture:
 ```
 Presentation  →  AccountController
 Application   →  AccountService / AccountServiceImpl
-Domain        →  Account entity, enums, DTOs, exceptions
-Persistence   →  AccountRepository
+               →  LedgerService / LedgerServiceImpl
+Domain        →  Account, Transaction, LedgerEntry entities, enums, DTOs, exceptions
+Persistence   →  AccountRepository, TransactionRepository, LedgerEntryRepository
 Database      →  PostgreSQL (schema managed by Flyway)
 ```
 
@@ -128,11 +159,16 @@ running.
 - **PostgreSQL** is the relational database.
 - **Flyway** is the sole schema authority. Hibernate does not create, modify, or drop schema
   objects.
-- **Phase 1 migration:** `V1__Create_Accounts.sql` — creates the `accounts` table with
-  `NOT NULL` constraints, `CHECK` constraints on `account_type` and `status`, and the
-  `UK_accounts_account_number` unique constraint.
-- `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates the `Account` entity mapping
-  against the live schema on every startup.
+- **Phase 1 migration:** `V1__Create_Accounts.sql` — creates the `accounts` table.
+- **Phase 2 migrations:**
+  - `V2__Create_Transactions.sql` — creates the `transactions` table with unique constraint
+    on `reference_number` and check constraints on `transaction_type` and `status`.
+  - `V3__Create_Ledger_Entries.sql` — creates the `ledger_entries` table with `NUMERIC(19,2)`
+    monetary precision, foreign keys to `transactions` and `accounts` (both `ON DELETE RESTRICT`),
+    check constraints on `entry_type` and `amount`, and indexes on `transaction_id` and `account_id`.
+- `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates `Account`, `Transaction`, and
+  `LedgerEntry` entity mappings against the live schema on every startup.
+- Current Flyway schema version: **3**.
 
 See [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) for the complete schema specification.
 
@@ -188,18 +224,19 @@ mvn clean test
 
 ## Testing
 
-Phase 1 test suite (`mvn clean test`):
+Phase 1 and Phase 2 combined test suite (`mvn test`):
 
 | Test class | Type | Tests |
 |---|---|---|
 | `AccountServiceImplTest` | Unit (Mockito, no DB) | 17 |
 | `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 14 |
+| `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
 
 **Verified result:**
 
 ```
-Tests run: 32, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 45, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -239,7 +276,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-019) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-022) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -250,8 +287,8 @@ event-sourced-ledger/
 |-------|-------------|--------|
 | Phase 0 | Project Foundation | **COMPLETED** |
 | Phase 1 | Account Module | **COMPLETED** |
-| Phase 2 | Ledger Foundation | **NEXT** |
-| Phase 3 | Event Store | Pending |
+| Phase 2 | Ledger Foundation | **COMPLETED** |
+| Phase 3 | Event Store | **NEXT** |
 | Phase 4 | Deposit & Withdrawal Engine | Pending |
 | Phase 5 | Transfer Engine | Pending |
 | Phase 6 | Balance Reconstruction | Pending |

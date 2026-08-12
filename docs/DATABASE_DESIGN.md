@@ -160,15 +160,15 @@ Examples:
 - Ensure atomicity
 - Maintain transaction metadata
 
-### Suggested Fields
+### Implemented Schema (`transactions` — V2)
 
-| Field | Description |
-|---------|------------|
-| id | Primary Key |
-| reference_number | Unique transaction reference |
-| transaction_type | Deposit / Withdrawal / Transfer |
-| status | Pending / Completed / Failed |
-| created_at | Timestamp |
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `BIGSERIAL` | Primary Key |
+| `reference_number` | `VARCHAR(100)` | `NOT NULL`, `UK_transactions_reference_number` (unique) |
+| `transaction_type` | `VARCHAR(50)` | `NOT NULL`, `CK_transactions_transaction_type` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`) |
+| `status` | `VARCHAR(50)` | `NOT NULL`, `CK_transactions_status` (`PENDING`, `COMPLETED`, `FAILED`) |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL`, non-updatable |
 
 ---
 
@@ -178,22 +178,40 @@ Represents a single accounting entry.
 
 Every transaction generates one or more ledger entries.
 
+`LedgerEntry` is intentionally immutable: once persisted, a ledger entry is never modified.
+
 ### Responsibilities
 
 - Debit accounting
 - Credit accounting
 - Financial balancing
 
-### Suggested Fields
+### Implemented Schema (`ledger_entries` — V3)
 
-| Field | Description |
-|---------|------------|
-| id | Primary Key |
-| transaction_id | FK → Transaction |
-| account_id | FK → Account |
-| entry_type | Debit / Credit |
-| amount | Monetary value |
-| created_at | Timestamp |
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `BIGSERIAL` | Primary Key |
+| `transaction_id` | `BIGINT` | `NOT NULL`, `FK_ledger_entries_transaction` → `transactions(id)` `ON DELETE RESTRICT` |
+| `account_id` | `BIGINT` | `NOT NULL`, `FK_ledger_entries_account` → `accounts(id)` `ON DELETE RESTRICT` |
+| `entry_type` | `VARCHAR(10)` | `NOT NULL`, `CK_ledger_entries_entry_type` (`DEBIT`, `CREDIT`) |
+| `amount` | `NUMERIC(19, 2)` | `NOT NULL`, `CK_ledger_entries_amount` (`amount > 0`) |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL`, non-updatable |
+
+### Indexes
+
+| Index | Column | Purpose |
+|-------|--------|---------|
+| `IDX_ledger_entries_transaction_id` | `transaction_id` | Fast retrieval of all entries for a transaction |
+| `IDX_ledger_entries_account_id` | `account_id` | Fast retrieval of account ledger history |
+
+### Monetary Precision
+
+The `amount` column uses `NUMERIC(19, 2)` — nineteen total digits with two decimal places.
+
+This precision supports values up to ₹99,999,999,999,999,999.99 and is the standard choice
+for single-currency monetary amounts. Multi-currency support (which would require 4 decimal
+places for certain exchange rate contexts) is out of scope and deferred to a future phase.
+See ADR-020.
 
 ---
 
@@ -488,13 +506,13 @@ Database schema changes are managed using Flyway.
 Example migration sequence:
 
 ```
-V1__Create_Accounts.sql
+V1__Create_Accounts.sql      — Phase 1 (APPLIED)
 
-V2__Create_Transactions.sql
+V2__Create_Transactions.sql  — Phase 2 (APPLIED)
 
-V3__Create_Ledger_Entries.sql
+V3__Create_Ledger_Entries.sql — Phase 2 (APPLIED)
 
-V4__Create_Events.sql
+V4__Create_Events.sql        — Phase 3 (pending)
 ```
 
 Schema changes must never rely on automatic ORM generation in production.
