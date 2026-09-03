@@ -22,8 +22,8 @@ alone.
 | Phase 0 | Project Foundation | **COMPLETED** (2026-08-10) |
 | Phase 1 | Account Module | **COMPLETED** (2026-08-12) |
 | Phase 2 | Ledger Foundation | **COMPLETED** (2026-08-13) |
-| Phase 3 | Event Store | **NEXT** |
-| Phase 4 | Deposit & Withdrawal Engine | Pending |
+| Phase 3 | Event Store | **COMPLETED** | (2026-09-03)
+| Phase 4 | Deposit & Withdrawal Engine | **NEXT**  |
 | Phase 5 | Transfer Engine | Pending |
 | Phase 6 | Balance Reconstruction | Pending |
 | Phase 7 | Audit Module | Pending |
