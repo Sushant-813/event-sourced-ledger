@@ -91,16 +91,44 @@ Tests run: 45, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
-## Architecture
+### Phase 3 — Event Store (completed)
 
-The backend follows a strict four-layer architecture:
+Phase 3 introduced immutable financial history — the event-sourcing backbone of the ledger.
+The following is implemented and fully tested:
+
+- `EventType` enum with exactly five approved values: `ACCOUNT_CREATED`, `DEPOSIT`,
+  `WITHDRAWAL`, `TRANSFER_DEBIT`, `TRANSFER_CREDIT`
+- `Event` JPA entity — **intentionally immutable**: no setters, no update lifecycle;
+  `occurred_at` is caller-supplied; `transaction` and `payload` are nullable
+- PostgreSQL `events` table managed by Flyway migration `V4__Create_Events.sql`;
+  deterministic ordering index on `(account_id, occurred_at, id)`
+- `EventRepository` (Spring Data JPA) with deterministically ordered retrieval:
+  `occurred_at ASC, id ASC` — see ADR-023
+- `EventService` and `EventServiceImpl` with explicit null validation for `account`,
+  `eventType`, and `occurredAt`; empty event collections returned normally; `EventNotFoundException`
+  thrown only for a missing event ID
+- `GlobalExceptionHandler` extended with a handler for `EventNotFoundException` (HTTP 404)
+- **No REST endpoints** — Phase 3 is a service and persistence layer only
+- **No balance reconstruction** — event replay logic belongs to Phase 6
+
+**Verified result:**
+
+```
+mvn test
+Tests run: 61, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+---
+
+## Architecture
 
 ```
 Presentation  →  AccountController
 Application   →  AccountService / AccountServiceImpl
                →  LedgerService / LedgerServiceImpl
-Domain        →  Account, Transaction, LedgerEntry entities, enums, DTOs, exceptions
-Persistence   →  AccountRepository, TransactionRepository, LedgerEntryRepository
+               →  EventService / EventServiceImpl
+Domain        →  Account, Transaction, LedgerEntry, Event entities, enums, DTOs, exceptions
+Persistence   →  AccountRepository, TransactionRepository, LedgerEntryRepository, EventRepository
 Database      →  PostgreSQL (schema managed by Flyway)
 ```
 
@@ -109,9 +137,9 @@ Database      →  PostgreSQL (schema managed by Flyway)
 - **Entities are never exposed directly** through the REST layer; all responses use DTOs.
 - **Constructor injection** is used throughout.
 
-The long-term design is event-sourced: financial history is intended to be immutable and
-authoritative, with current state derived by replaying that history. Event sourcing
-infrastructure is planned for Phase 3.
+The long-term design is event-sourced: financial history is immutable and authoritative, with
+current state derived by replaying that history. The Event Store infrastructure was introduced
+in Phase 3. Balance reconstruction is planned for Phase 6.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural specification.
 
@@ -166,9 +194,12 @@ running.
   - `V3__Create_Ledger_Entries.sql` — creates the `ledger_entries` table with `NUMERIC(19,2)`
     monetary precision, foreign keys to `transactions` and `accounts` (both `ON DELETE RESTRICT`),
     check constraints on `entry_type` and `amount`, and indexes on `transaction_id` and `account_id`.
-- `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates `Account`, `Transaction`, and
-  `LedgerEntry` entity mappings against the live schema on every startup.
-- Current Flyway schema version: **3**.
+- **Phase 3 migration:** `V4__Create_Events.sql` — creates the `events` table with a CHECK
+  constraint on `event_type`, foreign keys to `accounts` and `transactions`, and indexes
+  supporting deterministic chronological event retrieval.
+- `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates `Account`, `Transaction`,
+  `LedgerEntry`, and `Event` entity mappings against the live schema on every startup.
+- Current Flyway schema version: **4**.
 
 See [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) for the complete schema specification.
 
@@ -224,19 +255,20 @@ mvn clean test
 
 ## Testing
 
-Phase 1 and Phase 2 combined test suite (`mvn test`):
+Phase 1, Phase 2, and Phase 3 combined test suite (`mvn test`):
 
 | Test class | Type | Tests |
 |---|---|---|
 | `AccountServiceImplTest` | Unit (Mockito, no DB) | 17 |
 | `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 14 |
 | `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
+| `EventServiceImplTest` | Unit (Mockito, no DB) | 16 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
 
 **Verified result:**
 
 ```
-Tests run: 45, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 61, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -276,7 +308,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-022) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-023) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -288,8 +320,8 @@ event-sourced-ledger/
 | Phase 0 | Project Foundation | **COMPLETED** |
 | Phase 1 | Account Module | **COMPLETED** |
 | Phase 2 | Ledger Foundation | **COMPLETED** |
-| Phase 3 | Event Store | **NEXT** |
-| Phase 4 | Deposit & Withdrawal Engine | Pending |
+| Phase 3 | Event Store | **COMPLETED** |
+| Phase 4 | Deposit & Withdrawal Engine | **NEXT** |
 | Phase 5 | Transfer Engine | Pending |
 | Phase 6 | Balance Reconstruction | Pending |
 | Phase 7 | Audit Module | Pending |

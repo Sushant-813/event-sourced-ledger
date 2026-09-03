@@ -22,6 +22,7 @@ import com.ledger.account.exception.DuplicateAccountNumberException;
 import com.ledger.account.exception.InvalidAccountStatusTransitionException;
 import com.ledger.ledger.exception.InvalidLedgerEntryException;
 import com.ledger.ledger.exception.UnbalancedLedgerException;
+import com.ledger.event.exception.EventNotFoundException;
 
 import java.util.stream.Collectors;
 
@@ -213,6 +214,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
         }
 
+        // -------------------------------------------------------------------------
+        // 404 — Event not found
+        // -------------------------------------------------------------------------
+
+        /**
+         * Handles event lookups where the requested event does not exist.
+         */
+        @ExceptionHandler(EventNotFoundException.class)
+        public ResponseEntity<ApiError> handleEventNotFound(
+                        EventNotFoundException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn("404 Event not found on {}: {}", path, ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.NOT_FOUND.value(),
+                                HttpStatus.NOT_FOUND.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity
+                                .status(HttpStatus.NOT_FOUND)
+                                .body(body);
+        }
         // -------------------------------------------------------------------------
         // 409 — Duplicate account number
         // -------------------------------------------------------------------------

@@ -1081,6 +1081,81 @@ Negative
 
 ---
 
+# ADR-023
+
+## Title
+
+Event Ordering Strategy — `occurred_at ASC, id ASC`
+
+### Status
+
+Accepted
+
+### Context
+
+Events are chronological historical records. Phase 6 will implement balance reconstruction by
+replaying an account's event stream in order. For replay to produce correct and reproducible
+results, the event sequence must be deterministic.
+
+Multiple events can legitimately share the same `occurred_at` timestamp. This can occur when
+a financial operation produces more than one event in rapid succession within the same database
+transaction (for example, a transfer produces one `TRANSFER_DEBIT` and one `TRANSFER_CREDIT`
+event, both recorded at effectively the same instant). If ordering relied solely on
+`occurred_at`, the relative order of such events would be undefined and could vary between
+queries, making replay non-deterministic.
+
+### Decision
+
+Events retrieved for a given account or transaction are ordered by:
+
+1. `occurred_at ASC` — primary chronological sort by business-event timestamp
+2. `id ASC` — secondary deterministic tie-breaker using the auto-incrementing primary key
+
+The repository methods therefore use:
+
+- `findByAccountIdOrderByOccurredAtAscIdAsc` for account event retrieval
+- `findByTransactionIdOrderByOccurredAtAscIdAsc` for transaction event retrieval
+
+The composite account index is defined as `(account_id, occurred_at, id)` to directly
+support this ordering pattern without a separate sort step.
+
+### Alternatives Considered
+
+- `occurred_at` alone: rejected — events sharing the same timestamp would not have a
+  deterministic relative order, making Phase 6 replay non-reproducible across queries
+
+- Application-layer sorting: rejected — deterministic ordering should be established by
+  the persistence query rather than relying on each caller to sort correctly; database-level
+  ordering is guaranteed whereas application-layer sorting introduces a dependency on caller
+  discipline
+
+### Rationale
+
+`id` is a `BIGSERIAL` auto-incrementing primary key. Within PostgreSQL, `id` values increase
+monotonically per row per table. When `occurred_at` values are equal, `id ASC` produces a
+stable sequence that reflects insertion order, which is deterministic and reproducible.
+
+Establishing the ordering contract at the repository level means that every future consumer
+(Phase 6 replay, Phase 7 audit queries) automatically receives events in the correct sequence
+without needing to know the tie-breaking rule.
+
+### Consequences
+
+Positive
+
+- Event retrieval is deterministic regardless of timestamp collisions
+- Phase 6 replay can rely on the repository-provided event sequence
+- The composite index `(account_id, occurred_at, id)` supports both the filter predicate
+  and the two-column sort, avoiding a separate sort step in the query plan
+
+Negative
+
+- The ordering contract must remain stable as the event store evolves; changing the
+  ordering strategy in future phases would affect replay correctness and would require
+  an explicit ADR revision
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

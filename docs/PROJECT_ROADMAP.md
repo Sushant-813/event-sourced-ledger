@@ -133,6 +133,8 @@ The application correctly models double-entry bookkeeping.
 
 # Phase 3 — Event Store
 
+**Status: COMPLETED — 2026-09-03**
+
 ## Objective
 
 Introduce immutable financial history.

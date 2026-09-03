@@ -308,3 +308,112 @@ Phase 2 intentionally does NOT contain:
 Next Milestone
 
 Phase 3 — Event Store
+
+---
+
+## 2026-09-03
+
+### Phase 3 — Event Store: COMPLETED
+
+The Event Store domain has been fully implemented and verified following the approved Phase 3
+implementation plan.
+
+#### What Was Implemented
+
+**Database**
+
+- `V4__Create_Events.sql` applied successfully; `events` table created with six columns:
+  `id` (`BIGSERIAL` primary key), `account_id` (`BIGINT NOT NULL`), `transaction_id`
+  (`BIGINT`, nullable), `event_type` (`VARCHAR(50) NOT NULL`), `payload` (`TEXT`, nullable),
+  `occurred_at` (`TIMESTAMP WITH TIME ZONE NOT NULL`)
+- `FK_events_account` foreign key → `accounts(id)` `ON DELETE RESTRICT`
+- `FK_events_transaction` foreign key → `transactions(id)` `ON DELETE RESTRICT`
+  (nullable; not enforced when `transaction_id` is `NULL`, as required for `ACCOUNT_CREATED`)
+- `CK_events_event_type` CHECK constraint enforcing exactly five approved values:
+  `ACCOUNT_CREATED`, `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_DEBIT`, `TRANSFER_CREDIT`
+- Composite index `IDX_events_account_id_occurred_at_id` on `(account_id, occurred_at, id)`
+  supporting deterministic chronological account event retrieval
+- Index `IDX_events_transaction_id` on `(transaction_id)` supporting transaction event lookup
+- `spring.jpa.hibernate.ddl-auto=validate` remains in effect; Hibernate validates the `Event`
+  entity mapping against the Flyway-managed schema on every startup
+- PostgreSQL schema version is now 4; Flyway validates V1, V2, V3, and V4 successfully at startup
+
+**Domain**
+
+- `Event` JPA entity (`com.ledger.event.entity`) — intentionally immutable: no setters,
+  no `@PreUpdate` lifecycle callback; all fields set via constructor; all `@Column` and
+  `@JoinColumn` annotations include `updatable = false`
+- `EventType` enum: exactly five values — `ACCOUNT_CREATED`, `DEPOSIT`, `WITHDRAWAL`,
+  `TRANSFER_DEBIT`, `TRANSFER_CREDIT`
+- `Event` does not carry a monetary amount; monetary data remains exclusively in `LedgerEntry`,
+  accessible via `Event.transaction_id → Transaction → LedgerEntry`
+
+**Persistence**
+
+- `EventRepository` extending `JpaRepository<Event, Long>` with two derived query methods:
+  - `findByAccountIdOrderByOccurredAtAscIdAsc(Long accountId)` — account event history,
+    deterministically ordered by `occurred_at ASC, id ASC`
+  - `findByTransactionIdOrderByOccurredAtAscIdAsc(Long transactionId)` — transaction event
+    retrieval, deterministically ordered by `occurred_at ASC, id ASC`
+  - `findById` inherited from `JpaRepository` for single-event lookup
+
+**Application / Service**
+
+- `EventService` interface defining the four-method contract:
+  `recordEvent`, `getEventsByAccount`, `getEventsByTransaction`, `getEventById`
+- `EventServiceImpl` implementing the contract:
+  - Explicit null validation before any repository call:
+    `account == null` → `IllegalArgumentException`;
+    `eventType == null` → `IllegalArgumentException`;
+    `occurredAt == null` → `IllegalArgumentException`
+  - `transaction` and `payload` are nullable; no validation applied to them
+  - `occurredAt` is caller-supplied; the service does not call `OffsetDateTime.now()` internally
+  - `getEventsByAccount` and `getEventsByTransaction` return empty lists when no events exist;
+    no exception is thrown for empty collections
+  - `getEventById` throws `EventNotFoundException` when the requested event ID does not exist
+  - Individual event persistence is logged at `DEBUG` level; payloads are never logged
+
+**Exception Handling**
+
+- `EventNotFoundException` — plain `RuntimeException` subclass in `com.ledger.event.exception`;
+  single `String message` constructor
+- `GlobalExceptionHandler` extended with `handleEventNotFound` — returns HTTP 404 with
+  `ApiError` JSON, following the established pattern of `handleAccountNotFound`
+
+**Testing**
+
+- `EventServiceImplTest` — 16 unit tests (Mockito, JUnit 5, no Spring context, no database)
+  covering all service methods including recording variants, three null-validation guards
+  (account, eventType, occurredAt), account and transaction retrieval (ordered delegation,
+  unchanged list, empty list), and single-event lookup (found and not-found paths)
+
+#### Verification
+
+`mvn test` — **61 tests run, 0 failures, 0 errors, 0 skipped — BUILD SUCCESS**
+
+Spring Boot startup verified against PostgreSQL: Flyway applies and validates V1, V2, V3,
+and V4; Hibernate validates `Account`, `Transaction`, `LedgerEntry`, and `Event` entity
+mappings at startup.
+
+#### Architectural Boundary
+
+Phase 3 intentionally does NOT contain:
+
+- Deposit or withdrawal workflows (Phase 4)
+- Transfer workflows (Phase 5)
+- Balance reconstruction or event replay logic (Phase 6)
+- REST controllers or endpoints for event retrieval (Phase 7)
+- Historical balance calculation
+- Pagination of event results (Phase 8)
+
+Phase 3 establishes the event-store and retrieval infrastructure that future financial-operation
+phases will use to record events. Actual monetary event generation occurs in Phases 4 and 5,
+not Phase 3.
+
+#### New ADRs Recorded
+
+- ADR-023: Event Ordering Strategy — `occurred_at ASC, id ASC`
+
+Next Milestone
+
+Phase 4 — Deposit & Withdrawal Engine

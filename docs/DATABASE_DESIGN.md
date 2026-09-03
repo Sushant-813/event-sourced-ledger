@@ -232,16 +232,29 @@ Examples include:
 - Enable replay
 - Enable auditing
 
-### Suggested Fields
+### Implemented Schema (`events` — V4)
 
-| Field | Description |
-|---------|------------|
-| id | Primary Key |
-| account_id | FK → Account |
-| transaction_id | FK → Transaction (nullable where appropriate) |
-| event_type | Event classification |
-| payload | Event-specific data |
-| occurred_at | Event timestamp |
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `BIGSERIAL` | Primary Key |
+| `account_id` | `BIGINT` | `NOT NULL`, `FK_events_account` → `accounts(id)` `ON DELETE RESTRICT` |
+| `transaction_id` | `BIGINT` | nullable, `FK_events_transaction` → `transactions(id)` `ON DELETE RESTRICT` |
+| `event_type` | `VARCHAR(50)` | `NOT NULL`, `CK_events_event_type` (`ACCOUNT_CREATED`, `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_DEBIT`, `TRANSFER_CREDIT`) |
+| `payload` | `TEXT` | nullable; opaque metadata field |
+| `occurred_at` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL`; business-event timestamp; primary ordering column |
+
+### Indexes
+
+| Index | Columns | Purpose |
+|-------|---------|--------|
+| `IDX_events_account_id_occurred_at_id` | `(account_id, occurred_at, id)` | Deterministic chronological retrieval of all events for an account; tie-breaker on `id` ensures stable ordering when timestamps are equal |
+| `IDX_events_transaction_id` | `(transaction_id)` | Fast retrieval of all events associated with a transaction |
+
+### Immutability
+
+`Event` is intentionally immutable: once persisted, an event record is never modified.
+The entity exposes no setters and declares all columns as non-updatable (`updatable = false`).
+No delete workflow exists at the service layer.
 
 ---
 
@@ -512,7 +525,7 @@ V2__Create_Transactions.sql  — Phase 2 (APPLIED)
 
 V3__Create_Ledger_Entries.sql — Phase 2 (APPLIED)
 
-V4__Create_Events.sql        — Phase 3 (pending)
+V4__Create_Events.sql        — Phase 3 (APPLIED)
 ```
 
 Schema changes must never rely on automatic ORM generation in production.
