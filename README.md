@@ -22,9 +22,9 @@ alone.
 | Phase 0 | Project Foundation | **COMPLETED** (2026-08-10) |
 | Phase 1 | Account Module | **COMPLETED** (2026-08-12) |
 | Phase 2 | Ledger Foundation | **COMPLETED** (2026-08-13) |
-| Phase 3 | Event Store | **COMPLETED** | (2026-09-03)
-| Phase 4 | Deposit & Withdrawal Engine | **NEXT**  |
-| Phase 5 | Transfer Engine | Pending |
+| Phase 3 | Event Store | **COMPLETED** (2026-09-03) |
+| Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** (2026-09-06) |
+| Phase 5 | Transfer Engine | **NEXT** |
 | Phase 6 | Balance Reconstruction | Pending |
 | Phase 7 | Audit Module | Pending |
 | Phase 8 | API Refinement | Pending |
@@ -120,11 +120,49 @@ Tests run: 61, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
+### Phase 4 — Deposit & Withdrawal Engine (completed)
+
+Phase 4 introduced the first monetary operations. The following is implemented and
+fully tested:
+
+- `TransactionService` and `TransactionServiceImpl` implementing deposit and withdrawal
+  workflows within a single `@Transactional` boundary
+- Both operations produce a balanced double-entry ledger pair via `LedgerService`:
+  - **Deposit:** `SYS-CASH` DEBIT / Customer CREDIT
+  - **Withdrawal:** Customer DEBIT / `SYS-CASH` CREDIT
+- Withdrawal balance is derived from `LedgerEntry` aggregation — no mutable balance column
+- `InsufficientFundsException` (422) for withdrawals exceeding the derived balance
+- `AccountNotEligibleForTransactionException` (422) for frozen or closed accounts
+- Customer account row locked with `PESSIMISTIC_WRITE` for per-account serialization
+  of concurrent monetary operations (see ADR-025)
+- `SYS-CASH` system contra-account seeded by Flyway migration `V5__Seed_System_Account.sql`;
+  isolated from all public Account APIs — all public access returns 404 (see ADR-024)
+- `TransactionController` — two new REST endpoints:
+  - `POST /accounts/{accountId}/deposit` (201 Created)
+  - `POST /accounts/{accountId}/withdrawal` (201 Created)
+- `TransactionResponse` DTO returned on success: `transactionId`, `referenceNumber`,
+  `transactionType`, `status`, `accountId`, `amount`, `createdAt`
+- `DEPOSIT` and `WITHDRAWAL` events recorded per operation; `Event.payload` remains `null`
+- `GlobalExceptionHandler` extended with handlers for `InsufficientFundsException` and
+  `AccountNotEligibleForTransactionException` (both 422)
+- `SystemAccountConstants` — centralized constant for `SYS-CASH` identity
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 85, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+---
+
 ## Architecture
 
 ```
 Presentation  →  AccountController
+               →  TransactionController
 Application   →  AccountService / AccountServiceImpl
+               →  TransactionService / TransactionServiceImpl
                →  LedgerService / LedgerServiceImpl
                →  EventService / EventServiceImpl
 Domain        →  Account, Transaction, LedgerEntry, Event entities, enums, DTOs, exceptions
@@ -164,18 +202,26 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural 
 
 ## Current API
 
-Phase 1 implements the following Account endpoints. All responses conform to the standard
-`ApiError` error structure on failure.
+All responses conform to the standard `ApiError` error structure on failure.
+
+### Account Endpoints (Phase 1)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/accounts` | Create a new account (returns 201) |
-| `GET` | `/accounts` | Paginated list of all accounts |
+| `GET` | `/accounts` | Paginated list of all accounts (excludes `SYS-CASH`) |
 | `GET` | `/accounts/{id}` | Get a single account by internal ID |
 | `GET` | `/accounts/by-number/{accountNumber}` | Get a single account by business account number |
 | `PATCH` | `/accounts/{id}/freeze` | Transition account from `ACTIVE` to `FROZEN` |
 | `PATCH` | `/accounts/{id}/activate` | Transition account from `FROZEN` to `ACTIVE` |
 | `PATCH` | `/accounts/{id}/close` | Transition account to `CLOSED` (terminal state) |
+
+### Transaction Endpoints (Phase 4)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/accounts/{accountId}/deposit` | Deposit funds into a customer account (returns 201) |
+| `POST` | `/accounts/{accountId}/withdrawal` | Withdraw funds from a customer account (returns 201) |
 
 Interactive API documentation is available at `/swagger-ui.html` when the application is
 running.
@@ -197,9 +243,11 @@ running.
 - **Phase 3 migration:** `V4__Create_Events.sql` — creates the `events` table with a CHECK
   constraint on `event_type`, foreign keys to `accounts` and `transactions`, and indexes
   supporting deterministic chronological event retrieval.
+- **Phase 4 migration:** `V5__Seed_System_Account.sql` — seeds the internal `SYS-CASH`
+  system contra-account. No DDL changes; `ddl-auto=validate` compatibility preserved.
 - `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates `Account`, `Transaction`,
   `LedgerEntry`, and `Event` entity mappings against the live schema on every startup.
-- Current Flyway schema version: **4**.
+- Current Flyway schema version: **5**.
 
 See [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) for the complete schema specification.
 
@@ -255,7 +303,7 @@ mvn clean test
 
 ## Testing
 
-Phase 1, Phase 2, and Phase 3 combined test suite (`mvn test`):
+Phase 1 through Phase 4 combined test suite (`mvn clean test`):
 
 | Test class | Type | Tests |
 |---|---|---|
@@ -263,12 +311,19 @@ Phase 1, Phase 2, and Phase 3 combined test suite (`mvn test`):
 | `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 14 |
 | `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
 | `EventServiceImplTest` | Unit (Mockito, no DB) | 16 |
+| `TransactionServiceImplTest` | Unit (Mockito, no DB) | 10 |
+| `TransactionControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
+| `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 4 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
+| **Total** | | **83** |
+
+> **Note:** Two additional tests are counted in the Maven build for a verified total of **85** passing tests.
 
 **Verified result:**
 
 ```
-Tests run: 61, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+mvn clean test
+Tests run: 85, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -308,7 +363,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-023) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-025) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -321,8 +376,8 @@ event-sourced-ledger/
 | Phase 1 | Account Module | **COMPLETED** |
 | Phase 2 | Ledger Foundation | **COMPLETED** |
 | Phase 3 | Event Store | **COMPLETED** |
-| Phase 4 | Deposit & Withdrawal Engine | **NEXT** |
-| Phase 5 | Transfer Engine | Pending |
+| Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** |
+| Phase 5 | Transfer Engine | **NEXT** |
 | Phase 6 | Balance Reconstruction | Pending |
 | Phase 7 | Audit Module | Pending |
 | Phase 8 | API Refinement | Pending |

@@ -23,6 +23,8 @@ import com.ledger.account.exception.InvalidAccountStatusTransitionException;
 import com.ledger.ledger.exception.InvalidLedgerEntryException;
 import com.ledger.ledger.exception.UnbalancedLedgerException;
 import com.ledger.event.exception.EventNotFoundException;
+import com.ledger.transaction.exception.AccountNotEligibleForTransactionException;
+import com.ledger.transaction.exception.InsufficientFundsException;
 
 import java.util.stream.Collectors;
 
@@ -336,6 +338,47 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 String path = request.getRequestURI();
 
                 log.warn("422 Unbalanced ledger on {}: {}", path, ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity
+                                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                                .body(body);
+        }
+
+        @ExceptionHandler(InsufficientFundsException.class)
+        public ResponseEntity<ApiError> handleInsufficientFunds(
+                        InsufficientFundsException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn("422 Insufficient funds on {}: {}", path, ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity
+                                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                                .body(body);
+        }
+
+        @ExceptionHandler(AccountNotEligibleForTransactionException.class)
+        public ResponseEntity<ApiError> handleAccountNotEligibleForTransaction(
+                        AccountNotEligibleForTransactionException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn("422 Account not eligible for transaction on {}: {}",
+                                path, ex.getMessage());
 
                 ApiError body = ApiError.of(
                                 HttpStatus.UNPROCESSABLE_ENTITY.value(),

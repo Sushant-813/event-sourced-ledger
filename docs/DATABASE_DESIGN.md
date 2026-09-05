@@ -519,20 +519,94 @@ Database schema changes are managed using Flyway.
 Example migration sequence:
 
 ```
-V1__Create_Accounts.sql      — Phase 1 (APPLIED)
+V1__Create_Accounts.sql       — Phase 1 (APPLIED)
 
-V2__Create_Transactions.sql  — Phase 2 (APPLIED)
+V2__Create_Transactions.sql   — Phase 2 (APPLIED)
 
 V3__Create_Ledger_Entries.sql — Phase 2 (APPLIED)
 
-V4__Create_Events.sql        — Phase 3 (APPLIED)
+V4__Create_Events.sql         — Phase 3 (APPLIED)
+
+V5__Seed_System_Account.sql   — Phase 4 (APPLIED)
 ```
 
 Schema changes must never rely on automatic ORM generation in production.
 
 ---
 
-# 17. Future Schema Evolution
+# 17. System Contra-Account (SYS-CASH)
+
+Phase 4 deposits and withdrawals involve only a single customer account, but
+double-entry accounting requires every transaction to include both a DEBIT and
+a CREDIT entry. To satisfy this invariant, an internal system contra-account is
+used as the accounting counterpart.
+
+## Account Identity
+
+| Field | Value |
+|-------|-------|
+| `account_number` | `SYS-CASH` |
+| `account_name` | `System Cash Reserve` |
+| `account_type` | `CURRENT` |
+| `status` | `ACTIVE` |
+| Migration | `V5__Seed_System_Account.sql` |
+
+The account is identified by exact account number string equality (`SYS-CASH`), not
+by a generic prefix match. The constant is centralized in `SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER`.
+
+## Purpose
+
+`SYS-CASH` exists solely to provide the contra-entry required by double-entry
+accounting for single-account monetary operations. It is an internal accounting
+structure and is not a customer account.
+
+## Phase 4 Accounting Relationships
+
+### Deposit
+
+```
+SYS-CASH   DEBIT   amount
+Customer   CREDIT  amount
+```
+
+Cash flows inward from `SYS-CASH` (the system's cash reserve) into the customer account.
+
+### Withdrawal
+
+```
+Customer   DEBIT   amount
+SYS-CASH   CREDIT  amount
+```
+
+Cash flows outward from the customer account back into `SYS-CASH`.
+
+In both cases, `LedgerEntry.amount` is the authoritative monetary field.
+No mutable balance column exists.
+
+## Isolation from Public APIs
+
+`SYS-CASH` is completely hidden from public account endpoints:
+
+- `GET /accounts` excludes `SYS-CASH` from paginated results
+- `GET /accounts/{id}` returns 404 if the target account is `SYS-CASH`
+- `GET /accounts/by-number/{accountNumber}` returns 404 for `SYS-CASH`
+- Account status mutation operations (freeze/activate/close) return 404 for `SYS-CASH`
+- `POST /accounts/{accountId}/deposit` returns 404 if `accountId` resolves to `SYS-CASH`
+- `POST /accounts/{accountId}/withdrawal` returns 404 if `accountId` resolves to `SYS-CASH`
+
+Internal transaction processing may retrieve `SYS-CASH` by account number to construct
+the contra-entry ledger pair. This is the only permitted internal use.
+
+## Balance Semantics
+
+The operational balance of `SYS-CASH` itself is intentionally outside the Phase 4
+customer-balance model. Broader balance reconstruction semantics are deferred to Phase 6.
+
+See ADR-024 for the full rationale.
+
+---
+
+# 18. Future Schema Evolution
 
 Future versions may introduce additional entities such as:
 
@@ -549,7 +623,7 @@ The schema is intentionally designed to accommodate future expansion without bre
 
 ---
 
-# 18. Database Design Principles
+# 19. Database Design Principles
 
 The schema follows these principles.
 
@@ -563,7 +637,7 @@ The schema follows these principles.
 
 ---
 
-# 19. Guiding Philosophy
+# 20. Guiding Philosophy
 
 > **"The database is not a storage of balances; it is a storage of financial history."**
 

@@ -523,7 +523,91 @@ These constraints are considered architectural invariants.
 
 ---
 
-# 15. Future Architecture Evolution
+# 15. Phase 4 Monetary Operation Workflow
+
+Phase 4 implements deposit and withdrawal as the first real monetary operations.
+Each follows the same orchestration pattern, owned entirely by `TransactionServiceImpl`.
+
+## Request Lifecycle
+
+```
+Customer Request (POST /accounts/{accountId}/deposit or /withdrawal)
+        │
+        ▼
+Request Validation (@Valid DepositRequest / WithdrawalRequest, @Positive accountId)
+        │
+        ▼
+Acquire customer Account row with PESSIMISTIC_WRITE lock
+(AccountRepository.findByIdForUpdate)
+        │
+        ▼
+Business Validation
+ - Reject SYS-CASH target → AccountNotFoundException (404)
+ - Reject FROZEN / CLOSED account → AccountNotEligibleForTransactionException (422)
+        │
+        ▼
+Withdrawal only: Derive balance from LedgerEntry aggregation
+ - Reject if balance < amount → InsufficientFundsException (422)
+        │
+        ▼
+Retrieve SYS-CASH contra-account (findByAccountNumber)
+ - Absent → IllegalStateException (500)
+        │
+        ▼
+Create Transaction (UUID reference number, COMPLETED status)
+        │
+        ▼
+Construct balanced LedgerEntry pair
+ Deposit:    SYS-CASH DEBIT  /  Customer CREDIT
+ Withdrawal: Customer DEBIT  /  SYS-CASH CREDIT
+        │
+        ▼
+Persist via LedgerService.recordTransaction
+(validates double-entry invariants; saves Transaction + LedgerEntries)
+        │
+        ▼
+Record DEPOSIT / WITHDRAWAL Event via EventService.recordEvent
+(payload = null; occurred_at caller-supplied)
+        │
+        ▼
+Commit atomically
+(PESSIMISTIC_WRITE lock released; all writes visible or none)
+        │
+        ▼
+Return TransactionResponse (201 Created)
+```
+
+## Transaction Boundary
+
+`TransactionServiceImpl` owns the outer `@Transactional(rollbackFor = Exception.class)`
+boundary. `LedgerService` and `EventService` participate in this same transaction —
+they do not open independent transactions. Any unchecked exception thrown at any step
+causes a full rollback, preserving the atomicity of the entire deposit or withdrawal.
+
+## Concurrency Model
+
+The customer `Account` row is locked with `PESSIMISTIC_WRITE` before any financial
+state is read or written. This provides per-account serialization of concurrent
+monetary operations targeting the same account, preventing concurrent overdrafts.
+
+This is not database-wide SERIALIZABLE isolation. Only the single customer account
+row is serialized; unrelated accounts proceed concurrently.
+
+See ADR-025 for the full rationale.
+
+## SYS-CASH
+
+`SYS-CASH` is an internal contra-account used to satisfy double-entry accounting
+for single-account monetary operations. It is not visible through any public API
+(see ADR-024 and `docs/DATABASE_DESIGN.md` §17).
+
+Domain financial rules — including account eligibility, balance calculation, and
+the double-entry invariant — remain entirely within the service layer. The controller
+handles only HTTP concerns.
+
+---
+
+# 16. Future Architecture Evolution
 
 The current architecture intentionally focuses on a single-service implementation.
 
@@ -544,7 +628,7 @@ These enhancements should extend the existing architecture rather than replace i
 
 ---
 
-# 16. Guiding Philosophy
+# 17. Guiding Philosophy
 
 > **"Financial systems should preserve history, not overwrite it."**
 

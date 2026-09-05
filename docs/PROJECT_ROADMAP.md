@@ -155,6 +155,8 @@ Every financial action generates immutable events.
 
 # Phase 4 — Deposit & Withdrawal Engine
 
+**Status: COMPLETED — 2026-09-06**
+
 ## Objective
 
 Implement basic monetary operations.
@@ -163,17 +165,25 @@ Implement basic monetary operations.
 
 - Deposit workflow
 - Withdrawal workflow
-- Validation rules
-- Ledger generation
-- Event creation
+- Double-entry ledger generation (SYS-CASH contra-account)
+- Withdrawal balance validation from ledger history
+- Per-account pessimistic row locking
+- Event creation (DEPOSIT / WITHDRAWAL)
+- SYS-CASH system contra-account seeded and isolated from public APIs
 
 ## Success Criteria
 
-Deposits and withdrawals update ledger history correctly.
+Deposits and withdrawals update ledger history correctly, maintain double-entry
+balance invariants, and are protected against concurrent overdrafts via
+per-account pessimistic row locking.
+
+`mvn clean test` — **85 tests, 0 failures, BUILD SUCCESS**
 
 ---
 
 # Phase 5 — Transfer Engine
+
+**Status: NEXT**
 
 ## Objective
 

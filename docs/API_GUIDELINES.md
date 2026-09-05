@@ -431,7 +431,130 @@ Every API should follow these rules.
 
 ---
 
-# 21. Future Enhancements
+# 21. Implemented Endpoints Reference
+
+This section documents the endpoints implemented through Phase 4.
+
+---
+
+## Account Endpoints (Phase 1)
+
+| Method | Path | Description | Success |
+|--------|------|-------------|---------|
+| `POST` | `/accounts` | Create a new customer account | 201 |
+| `GET` | `/accounts` | Paginated list of customer accounts (excludes `SYS-CASH`) | 200 |
+| `GET` | `/accounts/{id}` | Get a customer account by internal ID | 200 |
+| `GET` | `/accounts/by-number/{accountNumber}` | Get a customer account by business account number | 200 |
+| `PATCH` | `/accounts/{id}/freeze` | Freeze an `ACTIVE` account | 200 |
+| `PATCH` | `/accounts/{id}/activate` | Activate a `FROZEN` account | 200 |
+| `PATCH` | `/accounts/{id}/close` | Close an account (terminal) | 200 |
+
+---
+
+## Transaction Endpoints (Phase 4)
+
+### POST /accounts/{accountId}/deposit
+
+Deposits funds into a customer account.
+
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Request Body:** `DepositRequest`
+
+```json
+{
+  "amount": "100.00"
+}
+```
+
+- `amount`: required, must be `> 0`, maximum 17 integer digits, 2 decimal places
+
+**Success Response:** `201 Created` — `TransactionResponse`
+
+```json
+{
+  "transactionId": 42,
+  "referenceNumber": "550e8400-e29b-41d4-a716-446655440000",
+  "transactionType": "DEPOSIT",
+  "status": "COMPLETED",
+  "accountId": 7,
+  "amount": "100.00",
+  "createdAt": "2026-09-06T01:30:00Z"
+}
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `amount` is null, zero, negative, or exceeds precision |
+| 400 | `accountId` path variable is not a positive integer |
+| 404 | Account not found, or account resolves to `SYS-CASH` |
+| 422 | Account status is `FROZEN` or `CLOSED` |
+| 500 | `SYS-CASH` system account missing from database (data integrity violation) |
+
+---
+
+### POST /accounts/{accountId}/withdrawal
+
+Withdraws funds from a customer account.
+
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Request Body:** `WithdrawalRequest`
+
+```json
+{
+  "amount": "40.00"
+}
+```
+
+- `amount`: required, must be `> 0`, maximum 17 integer digits, 2 decimal places
+
+**Success Response:** `201 Created` — `TransactionResponse`
+
+```json
+{
+  "transactionId": 43,
+  "referenceNumber": "662f9511-f30c-52e5-b827-557766551111",
+  "transactionType": "WITHDRAWAL",
+  "status": "COMPLETED",
+  "accountId": 7,
+  "amount": "40.00",
+  "createdAt": "2026-09-06T01:31:00Z"
+}
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `amount` is null, zero, negative, or exceeds precision |
+| 400 | `accountId` path variable is not a positive integer |
+| 404 | Account not found, or account resolves to `SYS-CASH` |
+| 422 | Account status is `FROZEN` or `CLOSED` |
+| 422 | Withdrawal amount exceeds the account's derived ledger balance |
+| 500 | `SYS-CASH` system account missing from database (data integrity violation) |
+
+---
+
+## SYS-CASH System Account
+
+`SYS-CASH` is an internal system contra-account used for double-entry accounting in
+deposit and withdrawal operations. It is not a customer account and is not exposed
+through any public API:
+
+- It does not appear in `GET /accounts` paginated results.
+- All public account lookup, status mutation, deposit, and withdrawal operations return
+  404 when the target account resolves to `SYS-CASH`.
+
+Clients cannot interact with `SYS-CASH` through any documented endpoint.
+
+---
+
+# 22. Future Enhancements
 
 Future API capabilities may include:
 
@@ -449,7 +572,7 @@ These enhancements should remain compatible with the core API philosophy.
 
 ---
 
-# 22. Guiding Philosophy
+# 23. Guiding Philosophy
 
 > **"An API is a contract, not an implementation."**
 

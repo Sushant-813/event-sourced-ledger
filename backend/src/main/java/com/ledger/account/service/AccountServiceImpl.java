@@ -11,6 +11,7 @@ import com.ledger.account.mapper.AccountMapper;
 import com.ledger.account.repository.AccountRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import com.ledger.common.constant.SystemAccountConstants;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -66,6 +67,10 @@ public class AccountServiceImpl implements AccountService {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + id));
 
+        if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER.equals(account.getAccountNumber())) {
+            throw new AccountNotFoundException("Account not found: " + id);
+        }
+
         return accountMapper.toResponse(account);
     }
 
@@ -75,13 +80,20 @@ public class AccountServiceImpl implements AccountService {
         Account account = accountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountNumber));
 
+        if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER.equals(account.getAccountNumber())) {
+            throw new AccountNotFoundException("Account not found: " + accountNumber);
+        }
+
         return accountMapper.toResponse(account);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<AccountResponse> getAllAccounts(Pageable pageable) {
-        return accountRepository.findAll(pageable)
+        return accountRepository
+                .findAllByAccountNumberNot(
+                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                        pageable)
                 .map(accountMapper::toResponse);
     }
 
@@ -107,6 +119,10 @@ public class AccountServiceImpl implements AccountService {
 
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found: " + id));
+
+        if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER.equals(account.getAccountNumber())) {
+            throw new AccountNotFoundException("Account not found: " + id);
+        }
 
         AccountStatus currentStatus = account.getStatus();
 

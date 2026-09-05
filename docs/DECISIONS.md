@@ -1156,6 +1156,194 @@ Negative
 
 ---
 
+# ADR-024
+
+## Title
+
+System Contra-Account (`SYS-CASH`) and Public API Isolation
+
+### Status
+
+Accepted
+
+### Context
+
+Deposits and withdrawals are single-customer-account monetary operations.
+However, the double-entry accounting model requires every financial operation
+to contain both a DEBIT and a CREDIT ledger entry.
+
+Because there is no second customer account involved in a deposit or withdrawal,
+an internal contra-account is required to provide the accounting counterpart.
+
+This account must not be exposed as a normal customer account because allowing
+public access could permit users to directly manipulate the internal accounting
+structure.
+
+### Decision
+
+A dedicated internal system account with the exact account number
+`SYS-CASH` is introduced as the contra-account for Phase 4 monetary operations.
+
+The account is seeded through Flyway migration V5 with:
+
+- Account number: `SYS-CASH`
+- Account type: `CURRENT`
+- Status: `ACTIVE`
+
+The identity of the system account is centralized in
+`SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER`.
+
+Public account APIs completely isolate this account:
+
+- `GET /accounts` excludes `SYS-CASH`
+- `GET /accounts/{id}` returns 404 when the target is `SYS-CASH`
+- `GET /accounts/by-number/{accountNumber}` returns 404 for `SYS-CASH`
+- account status mutation operations return 404 for `SYS-CASH`
+- deposit operations reject `SYS-CASH` as a target account
+- withdrawal operations reject `SYS-CASH` as a target account
+
+Internal transaction processing may retrieve and use `SYS-CASH` as the
+contra-account.
+
+The system account's operational balance semantics are intentionally outside
+the Phase 4 customer-balance model and are deferred to Phase 6.
+
+### Alternatives Considered
+
+- **Generic `SYS-*` account prefix:** Rejected because arbitrary customer
+  account numbers such as `SYS-TEST` could be incorrectly classified as
+  system accounts.
+
+- **`is_system` database column:** Rejected because it introduces an additional
+  schema concept that is unnecessary for the current single system account.
+
+- **Dedicated `SYSTEM` account type:** Rejected because the existing account
+  type model already supports the required system account without introducing
+  another domain enum value.
+
+### Rationale
+
+A single explicit system contra-account satisfies the double-entry requirement
+for deposits and withdrawals without introducing artificial customer accounts.
+
+Exact-string identity provides deterministic and narrow system-account
+protection, while public API isolation prevents accidental or malicious
+manipulation of the internal accounting account.
+
+Keeping system-account balance semantics separate from customer-account
+semantics also preserves the Phase 4 scope and avoids prematurely defining
+rules required by Phase 6 balance reconstruction.
+
+### Consequences
+
+Positive
+
+- Deposits and withdrawals remain fully double-entry compliant
+- Internal accounting structure is protected from public manipulation
+- System-account identity is centralized and unambiguous
+- No unnecessary database schema changes are required
+- Future phases can extend system-account semantics independently
+
+Negative
+
+- The application must explicitly protect `SYS-CASH` across all relevant
+  public account operations
+- The system account introduces an internal account that must be preserved
+  across database lifecycle operations
+
+---
+
+# ADR-025
+
+## Title
+
+Pessimistic Row Locking for Phase 4 Monetary Operations
+
+### Status
+
+Accepted
+
+### Context
+
+Deposit and withdrawal operations derive financial state from immutable
+ledger entries.
+
+Without concurrency control, two monetary operations targeting the same
+customer account could read the same balance before either operation commits.
+
+For example, with a customer balance of $100.00, two concurrent $80.00
+withdrawals could both observe the $100.00 balance and both proceed,
+creating an overdraft.
+
+The same account-level serialization requirement applies to deposits because
+Phase 4 monetary operations must have consistent ordering when concurrent
+deposits and withdrawals target the same customer account.
+
+### Decision
+
+Every Phase 4 deposit and withdrawal operation acquires a
+`PESSIMISTIC_WRITE` lock on the customer `Account` row.
+
+The lock is acquired through the repository's
+`findByIdForUpdate(Long id)` method.
+
+The lock is held for the duration of the outer transaction, which encompasses:
+
+1. customer account validation
+2. balance calculation where applicable
+3. transaction creation
+4. ledger entry persistence
+5. event persistence
+
+This provides per-account serialization of Phase 4 monetary operations.
+
+The system contra-account `SYS-CASH` is not explicitly row-locked.
+
+### Alternatives Considered
+
+- **Lock withdrawals only:** Rejected because deposits and withdrawals are both
+  monetary operations targeting the same customer account. Locking only
+  withdrawals would allow concurrent deposit/withdrawal interleavings.
+
+- **Optimistic locking with `@Version`:** Rejected because it requires a schema
+  change to the `accounts` table and introduces transaction retry/abort behavior
+  under contention.
+
+- **Database-wide `SERIALIZABLE` isolation:** Rejected because it would impose
+  serialization beyond the affected customer account and could cause unrelated
+  transactions to fail, requiring broader retry infrastructure.
+
+### Rationale
+
+Pessimistic row locking directly protects the resource whose state determines
+withdrawal eligibility: the customer account row.
+
+By acquiring the lock before balance calculation, concurrent monetary operations
+against the same customer account cannot independently observe and act upon the
+same stale balance.
+
+Because Phase 4 operations lock at most one customer account row, the locking
+model provides per-account serialization without introducing cyclic lock
+dependencies between Phase 4 operations.
+
+### Consequences
+
+Positive
+
+- Prevents concurrent withdrawal overdrafts
+- Serializes deposits and withdrawals targeting the same customer account
+- Keeps the concurrency guarantee localized to the affected account
+- Does not require changes to the existing `accounts` schema
+- Provides a straightforward concurrency model for future monetary operations
+
+Negative
+
+- Concurrent operations targeting the same customer account may wait for the
+  existing transaction to release its row lock
+- Lock contention can reduce throughput for highly active individual accounts
+- Future multi-account operations such as transfers will require additional
+  lock-ordering considerations
+
 # Future Decisions
 
 This document will continue to evolve.

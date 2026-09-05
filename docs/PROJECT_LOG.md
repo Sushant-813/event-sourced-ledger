@@ -416,4 +416,151 @@ not Phase 3.
 
 Next Milestone
 
-Phase 4 — Deposit & Withdrawal Engine
+Phase 4 — Deposit & Withdrawal Engine
+
+---
+
+## 2026-09-06
+
+### Phase 4 — Deposit & Withdrawal Engine: COMPLETED
+
+The Deposit & Withdrawal Engine has been fully implemented and verified following the
+approved Phase 4 implementation plan.
+
+#### What Was Implemented
+
+**Database**
+
+- `V5__Seed_System_Account.sql` applied successfully; inserts the internal `SYS-CASH`
+  system contra-account with account number `SYS-CASH`, account type `CURRENT`, and
+  status `ACTIVE`
+- No DDL changes introduced; `spring.jpa.hibernate.ddl-auto=validate` compatibility
+  remains intact
+- PostgreSQL schema version is now 5; Flyway validates V1 through V5 successfully at startup
+
+**Transaction Engine**
+
+- `TransactionService` interface defining `deposit(Long accountId, DepositRequest)` and
+  `withdraw(Long accountId, WithdrawalRequest)` method contracts
+- `TransactionServiceImpl` implementing both workflows, annotated
+  `@Transactional(rollbackFor = Exception.class)`:
+  - Both methods acquire a `PESSIMISTIC_WRITE` lock on the customer `Account` row as the
+    first operation, providing per-account serialization
+  - Completed transactions are created with `TransactionStatus.COMPLETED` and a
+    `UUID`-generated reference number
+- `SystemAccountConstants` — centralized constant holding `SYSTEM_CASH_ACCOUNT_NUMBER = "SYS-CASH"`
+
+**Accounting Model**
+
+- Deposit double-entry: `SYS-CASH` DEBIT / Customer CREDIT
+- Withdrawal double-entry: Customer DEBIT / `SYS-CASH` CREDIT
+- Both entry pairs delegated to `LedgerService.recordTransaction` for double-entry
+  validation and persistence
+- `LedgerEntry.amount` remains the sole authoritative monetary source; no mutable balance
+  column was introduced
+
+**Balance Calculation**
+
+- Withdrawal balance derived at runtime via `LedgerEntryRepository.computeBalanceByAccountId`:
+  `COALESCE(SUM(CASE WHEN entry_type = 'CREDIT' THEN amount WHEN entry_type = 'DEBIT' THEN -amount END), 0)`
+- Balance check performed before retrieving the system account; `InsufficientFundsException`
+  thrown when `balance < requestedAmount`
+- Event replay/balance reconstruction remains Phase 6
+
+**Concurrency**
+
+- Customer `Account` row locked with `PESSIMISTIC_WRITE` via `AccountRepository.findByIdForUpdate`
+- Lock held throughout the outer transaction (validation, balance check, ledger persistence,
+  event persistence)
+- Per-account serialization prevents concurrent overdrafts
+- Concurrent withdrawal protection verified by integration test:
+  - Initial balance: $100.00
+  - Two concurrent $80.00 withdrawal attempts
+  - Result: one success, one `InsufficientFundsException`
+  - Final balance: $20.00
+- `SYS-CASH` is not explicitly row-locked (see ADR-025)
+
+**Events**
+
+- `EventType.DEPOSIT` recorded per successful deposit operation
+- `EventType.WITHDRAWAL` recorded per successful withdrawal operation
+- `Event.payload` remains `null` for both operation types
+- `LedgerEntry.amount` remains the monetary source of truth; events carry no monetary fields
+
+**API**
+
+- `TransactionController` exposing two endpoints:
+  - `POST /accounts/{accountId}/deposit` — 201 Created on success
+  - `POST /accounts/{accountId}/withdrawal` — 201 Created on success
+- `DepositRequest` record with `@NotNull @DecimalMin("0.01") @Digits(integer=17, fraction=2)` on `amount`
+- `WithdrawalRequest` record with same validation constraints
+- `TransactionResponse` record returned on success: `transactionId`, `referenceNumber`,
+  `transactionType`, `status`, `accountId`, `amount`, `createdAt`
+- Path variable `accountId` validated `@Positive` at the controller layer
+
+**SYS-CASH Public API Isolation**
+
+- `GET /accounts` excludes `SYS-CASH` via `findAllByAccountNumberNot`
+- `GET /accounts/{id}` — returns 404 when target resolves to `SYS-CASH`
+- `GET /accounts/by-number/{accountNumber}` — returns 404 for `SYS-CASH`
+- Account status mutation endpoints (freeze/activate/close) — return 404 for `SYS-CASH`
+- `POST /accounts/{accountId}/deposit` — returns 404 when `accountId` resolves to `SYS-CASH`
+- `POST /accounts/{accountId}/withdrawal` — returns 404 when `accountId` resolves to `SYS-CASH`
+- `POST /accounts` — duplicate creation rejected by existing `existsByAccountNumber` check (409)
+
+**Exception Handling**
+
+- `InsufficientFundsException` — 422 Unprocessable Entity (withdrawal amount exceeds balance)
+- `AccountNotEligibleForTransactionException` — 422 Unprocessable Entity (account is FROZEN or CLOSED)
+- `IllegalStateException` — 500 Internal Server Error (SYS-CASH missing from database; data integrity violation)
+- `GlobalExceptionHandler` extended with `handleInsufficientFunds` and
+  `handleAccountNotEligibleForTransaction` handlers
+
+**Testing**
+
+- `TransactionServiceImplTest` — 10 unit tests (Mockito, JUnit 5, no Spring context, no database)
+  covering deposit success with `ArgumentCaptor` double-entry verification, account-not-found,
+  frozen/closed account rejection, SYS-CASH target rejection, SYS-CASH missing from database,
+  withdrawal success, withdrawal at exact balance, insufficient funds, frozen/closed account
+  withdrawal rejection, and SYS-CASH withdrawal rejection
+- `TransactionControllerTest` — 8 API-layer tests (`@WebMvcTest`, MockMvc auto-configured
+  with `GlobalExceptionHandler`) covering 201 deposit success, 201 withdrawal success,
+  400 for invalid amounts, 400 for invalid account ID, 422 for insufficient funds, and
+  422 for frozen account
+- `TransactionServiceIntegrationTest` — 4 integration tests (`@SpringBootTest`, PostgreSQL)
+  covering:
+  - Full deposit persistence: transaction, 2 ledger entries, DEPOSIT event, null payload,
+    derived balance
+  - Rollback after simulated event persistence failure: all writes reverted atomically
+  - Concurrent withdrawal serialization: $100 balance, two concurrent $80 withdrawals,
+    one success, one `InsufficientFundsException`, final balance $20
+  - SYS-CASH migration verification: account is ACTIVE, CURRENT type
+
+#### Verification
+
+`mvn clean test` — **85 tests run, 0 failures, 0 errors, 0 skipped** — BUILD SUCCESS
+
+Spring Boot startup verified against PostgreSQL: Flyway applies and validates V1 through V5;
+Hibernate validates `Account`, `Transaction`, `LedgerEntry`, and `Event` entity mappings
+at startup.
+
+#### Architectural Boundary
+
+Phase 4 intentionally does NOT contain:
+
+- Account-to-account transfers (Phase 5)
+- Event replay or balance reconstruction from event history (Phase 6)
+- Event retrieval REST APIs (Phase 7)
+- Idempotency keys
+- Multi-currency support
+- Authentication or authorization
+- Tenant isolation
+
+**New ADRs Recorded**
+
+- ADR-024: System Contra-Account (`SYS-CASH`) and Public API Isolation
+- ADR-025: Pessimistic Row Locking for Phase 4 Monetary Operations
+
+Next Milestone
+
+Phase 5 — Transfer Engine
