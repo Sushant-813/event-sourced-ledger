@@ -564,3 +564,165 @@ Phase 4 intentionally does NOT contain:
 Next Milestone
 
 Phase 5 — Transfer Engine
+
+---
+
+## 2026-09-07
+
+### Phase 5 — Transfer Engine: COMPLETED
+
+The Transfer Engine has been fully implemented and verified following the approved
+Phase 5 implementation plan.
+
+#### What Was Implemented
+
+**Database & Schema**
+
+- No new Flyway migration required; existing schema fully supports customer-to-customer
+  transfers:
+  - `transactions.transaction_type` CHECK constraint already permits `TRANSFER` (Phase 2)
+  - `ledger_entries.entry_type` CHECK constraint permits `DEBIT` and `CREDIT` (Phase 2)
+  - `events.event_type` CHECK constraint permits `TRANSFER_DEBIT` and `TRANSFER_CREDIT` (Phase 3)
+- Schema version remains 5; `spring.jpa.hibernate.ddl-auto=validate` validates entity
+  mappings successfully at application startup
+
+**Transfer Engine**
+
+- `TransactionService` interface extended with `transfer(TransferRequest request)` method
+  contract
+- `TransactionServiceImpl` implements `transfer`, annotated
+  `@Transactional(rollbackFor = Exception.class)`:
+  - Deterministic ascending account-ID pessimistic locking using `AccountRepository.findByIdForUpdate`:
+    locks `lowerAccountId = Math.min(...)` first, then `higherAccountId = Math.max(...)`
+  - Clean role restoration maps locked `Account` entities back to `sourceAccount` and
+    `destinationAccount`
+  - Rejection of same-account transfers (`sourceAccountId.equals(destinationAccountId)`) with
+    `InvalidTransferException` (422)
+  - Completed transactions created with `TransactionType.TRANSFER`, `TransactionStatus.COMPLETED`,
+    and a `UUID`-generated reference number
+
+**Accounting Model**
+
+- Customer-to-customer double-entry:
+  - Source account receives one `DEBIT` ledger entry
+  - Destination account receives one equal `CREDIT` ledger entry
+- Both entries belong to the same `Transaction` instance and share the same UTC timestamp
+- Delegated to `LedgerService.recordTransaction` for double-entry balance validation and
+  atomic persistence
+- `SYS-CASH` contra-account does NOT participate in customer-to-customer transfers;
+  transfers are direct customer-to-customer balance movements
+
+**Business Validation & Isolation**
+
+- Existence checks: both source and destination accounts must exist (`AccountNotFoundException` 404)
+- Exact `SYS-CASH` isolation: if either source or destination account resolves to `SYS-CASH`,
+  rejected with `AccountNotFoundException` (404)
+- Account eligibility: both accounts must have status `AccountStatus.ACTIVE`; `FROZEN` or `CLOSED`
+  accounts rejected with `AccountNotEligibleForTransactionException` (422)
+- Same-account transfer: source and destination cannot be identical (`InvalidTransferException` 422)
+- Monetary amount validation: Jakarta Bean Validation enforces `@NotNull`, `@DecimalMin("0.01")`,
+  and `@Digits(integer = 17, fraction = 2)`
+- Derived balance check: source account balance derived at runtime via
+  `LedgerEntryRepository.computeBalanceByAccountId(sourceAccountId)`; rejected with
+  `InsufficientFundsException` (422) if `sourceBalance < requestedAmount`
+
+**Concurrency & Deadlock Prevention**
+
+- Both accounts row-locked with `PESSIMISTIC_WRITE` in ascending account-ID order
+  (`Math.min` then `Math.max`)
+- Ascending-ID lock ordering eliminates lock-order inversion deadlocks when concurrent transfers
+  operate in opposite directions (`Account A → Account B` vs `Account B → Account A`)
+- Locks held for the entire duration of the outer transaction (validation, balance check,
+  transaction persistence, ledger entries, and events)
+- Serializes competing transfers or withdrawals from the same source account, preventing
+  concurrent double-spending / overdrafts
+- Concurrency protections verified by multi-threaded integration tests
+
+**Events**
+
+- Two immutable events recorded in the same transaction context:
+  - `EventType.TRANSFER_DEBIT` for the source account
+  - `EventType.TRANSFER_CREDIT` for the destination account
+- Both events carry `payload = null` and share the caller-supplied UTC timestamp
+- Both events linked to the same `Transaction` entity
+- If event recording fails, the entire transaction (including transaction record and ledger
+  entries) rolls back atomically
+
+**API & Web Layer**
+
+- `TransferController` exposing `POST /transfers` returning HTTP 201 Created on success
+- `TransferRequest` record: `sourceAccountId` (`@NotNull @Positive`), `destinationAccountId`
+  (`@NotNull @Positive`), `amount` (`@NotNull @DecimalMin("0.01") @Digits(integer=17, fraction=2)`)
+- `TransferResponse` record returned on success: `transactionId`, `referenceNumber`,
+  `transactionType`, `status`, `sourceAccountId`, `destinationAccountId`, `amount`, `createdAt`
+- OpenAPI 3 / Swagger annotations providing complete endpoint and error documentation
+
+**Exception Handling**
+
+- `InvalidTransferException` — HTTP 422 Unprocessable Entity (same source and destination account)
+- `GlobalExceptionHandler` extended with `handleInvalidTransfer` handler
+- Existing handlers reused for `AccountNotFoundException` (404),
+  `AccountNotEligibleForTransactionException` (422), and `InsufficientFundsException` (422)
+
+**Testing**
+
+- Test suite expanded from 85 to 108 passing tests (+23 new tests):
+- `TransactionServiceImplTest` — 12 new unit tests (22 total) covering:
+  - Transfer success with `ArgumentCaptor` verification of transaction, matching debit/credit
+    ledger entries, and two transaction-linked events
+  - Same-source and destination rejection (`InvalidTransferException`)
+  - Missing source account (`AccountNotFoundException`)
+  - Missing destination account (`AccountNotFoundException`)
+  - `SYS-CASH` as source rejection (`AccountNotFoundException`)
+  - Inactive / frozen source account (`AccountNotEligibleForTransactionException`)
+  - Inactive / frozen destination account (`AccountNotEligibleForTransactionException`)
+  - Insufficient funds rejection (`InsufficientFundsException`)
+  - Exact balance transfer success leaving balance at zero
+  - InOrder verification of ascending account-ID lock acquisition order
+- `TransferControllerTest` — 8 new API-layer tests (`@WebMvcTest`, MockMvc) covering:
+  - 201 Created transfer success response structure and JSON fields
+  - 400 Bad Request for zero or negative amounts
+  - 400 Bad Request for invalid source account ID (<= 0)
+  - 400 Bad Request for invalid destination account ID (<= 0)
+  - 422 Unprocessable Entity for same source and destination account
+  - 404 Not Found for missing account
+  - 422 Unprocessable Entity for insufficient funds
+  - 422 Unprocessable Entity for ineligible / frozen account
+- `TransactionServiceIntegrationTest` — 5 new integration tests (9 total) covering:
+  - Full transfer persistence: transaction, exactly 2 ledger entries (source DEBIT, destination
+    CREDIT), 2 events (`TRANSFER_DEBIT`, `TRANSFER_CREDIT` with null payload), and correct
+    derived balances
+  - Rollback on simulated event persistence failure: all transaction records, ledger entries,
+    and events revert atomically
+  - Exact balance transfer: leaves source balance at exactly 0.00 and credits destination
+  - Concurrent opposite-direction transfers: both succeed without deadlocks; final balances
+    remain correct
+  - Concurrent transfers from same source: only one succeeds, second fails with
+    `InsufficientFundsException`; prevents double-spending
+
+#### Verification
+
+`mvn clean test` — **108 tests run, 0 failures, 0 errors, 0 skipped** — BUILD SUCCESS
+
+Spring Boot startup verified against PostgreSQL: Flyway validates V1 through V5; Hibernate
+validates all entity mappings at startup.
+
+#### Architectural Boundary
+
+Phase 5 intentionally does NOT contain:
+
+- Event replay or balance reconstruction from event history (Phase 6)
+- Historical balance computation (Phase 6)
+- Event retrieval REST APIs or audit timeline (Phase 7)
+- Pagination, sorting, or filtering of transactions (Phase 8)
+- Multi-currency transfers
+- Idempotency keys
+- Authentication or authorization
+
+#### New ADRs Recorded
+
+- ADR-026: Deterministic Ascending-ID Pessimistic Locking and Role Restoration for Account Transfers
+
+Next Milestone
+
+Phase 6 — Balance Reconstruction

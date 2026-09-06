@@ -20,13 +20,19 @@ import com.ledger.transaction.entity.TransactionStatus;
 import com.ledger.transaction.entity.TransactionType;
 import com.ledger.transaction.exception.AccountNotEligibleForTransactionException;
 import com.ledger.transaction.exception.InsufficientFundsException;
+import com.ledger.transaction.exception.InvalidTransferException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.ledger.transaction.dto.TransferRequest;
+import com.ledger.transaction.dto.TransferResponse;
+import static org.mockito.Mockito.times;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,454 +41,851 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceImplTest {
 
-    @Mock
-    private AccountRepository accountRepository;
-
-    @Mock
-    private LedgerEntryRepository ledgerEntryRepository;
-
-    @Mock
-    private LedgerService ledgerService;
-
-    @Mock
-    private EventService eventService;
-
-    @InjectMocks
-    private TransactionServiceImpl transactionService;
-
-    private Account customerAccount;
-    private Account systemAccount;
-
-    @BeforeEach
-    void setUp() {
-        customerAccount = new Account();
-        customerAccount.setAccountNumber("ACC001");
-        customerAccount.setAccountName("John Doe");
-        customerAccount.setAccountType(AccountType.SAVINGS);
-        customerAccount.setStatus(AccountStatus.ACTIVE);
+        @Mock
+        private AccountRepository accountRepository;
+
+        @Mock
+        private LedgerEntryRepository ledgerEntryRepository;
+
+        @Mock
+        private LedgerService ledgerService;
+
+        @Mock
+        private EventService eventService;
+
+        @InjectMocks
+        private TransactionServiceImpl transactionService;
+
+        private Account customerAccount;
+        private Account systemAccount;
+        private Account sourceAccount;
+        private Account destinationAccount;
+
+        @BeforeEach
+        void setUp() {
+                sourceAccount = new Account();
+                sourceAccount.setAccountNumber("ACC002");
+                sourceAccount.setAccountName("Source Account");
+                sourceAccount.setAccountType(AccountType.SAVINGS);
+                sourceAccount.setStatus(AccountStatus.ACTIVE);
+
+                destinationAccount = new Account();
+                destinationAccount.setAccountNumber("ACC003");
+                destinationAccount.setAccountName("Destination Account");
+                destinationAccount.setAccountType(AccountType.SAVINGS);
+                destinationAccount.setStatus(AccountStatus.ACTIVE);
+                customerAccount = new Account();
+                customerAccount.setAccountNumber("ACC001");
+                customerAccount.setAccountName("John Doe");
+                customerAccount.setAccountType(AccountType.SAVINGS);
+                customerAccount.setStatus(AccountStatus.ACTIVE);
+
+                systemAccount = new Account();
+                systemAccount.setAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                systemAccount.setAccountName("System Cash Reserve");
+                systemAccount.setAccountType(AccountType.CURRENT);
+                systemAccount.setStatus(AccountStatus.ACTIVE);
+        }
+
+        @Test
+        void deposit_success() {
+
+                // Arrange
+                Long accountId = 1L;
+                BigDecimal amount = new BigDecimal("100.00");
+                DepositRequest request = new DepositRequest(amount);
+
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
+
+                when(accountRepository.findByAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
+                                .thenReturn(Optional.of(systemAccount));
+
+                // Act
+                TransactionResponse result = transactionService.deposit(accountId, request);
+
+                // Assert
+                assertEquals(TransactionType.DEPOSIT, result.transactionType());
+                assertEquals(TransactionStatus.COMPLETED, result.status());
+                assertEquals(amount, result.amount());
+                assertEquals(customerAccount.getId(), result.accountId());
+
+                ArgumentCaptor<List<LedgerEntry>> entriesCaptor = ArgumentCaptor.forClass(List.class);
+
+                verify(ledgerService).recordTransaction(
+                                any(Transaction.class),
+                                entriesCaptor.capture());
+
+                List<LedgerEntry> entries = entriesCaptor.getValue();
+
+                assertEquals(2, entries.size());
+
+                LedgerEntry debitEntry = entries.stream()
+                                .filter(entry -> entry.getEntryType() == EntryType.DEBIT)
+                                .findFirst()
+                                .orElseThrow();
+
+                LedgerEntry creditEntry = entries.stream()
+                                .filter(entry -> entry.getEntryType() == EntryType.CREDIT)
+                                .findFirst()
+                                .orElseThrow();
+
+                assertEquals(systemAccount, debitEntry.getAccount());
+                assertEquals(customerAccount, creditEntry.getAccount());
+                assertEquals(amount, debitEntry.getAmount());
+                assertEquals(amount, creditEntry.getAmount());
+
+                verify(eventService).recordEvent(
+                                eq(customerAccount),
+                                any(Transaction.class),
+                                eq(EventType.DEPOSIT),
+                                eq(null),
+                                any());
+        }
 
-        systemAccount = new Account();
-        systemAccount.setAccountNumber(
-                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
-        systemAccount.setAccountName("System Cash Reserve");
-        systemAccount.setAccountType(AccountType.CURRENT);
-        systemAccount.setStatus(AccountStatus.ACTIVE);
-    }
-
-    @Test
-    void deposit_success() {
+        @Test
+        void deposit_accountNotFound_throwsException() {
 
-        // Arrange
-        Long accountId = 1L;
-        BigDecimal amount = new BigDecimal("100.00");
-        DepositRequest request = new DepositRequest(amount);
+                // Arrange
+                Long accountId = 999L;
+                DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.empty());
 
-        when(accountRepository.findByAccountNumber(
-                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
-                .thenReturn(Optional.of(systemAccount));
+                // Act & Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.deposit(accountId, request));
 
-        // Act
-        TransactionResponse result = transactionService.deposit(accountId, request);
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        // Assert
-        assertEquals(TransactionType.DEPOSIT, result.transactionType());
-        assertEquals(TransactionStatus.COMPLETED, result.status());
-        assertEquals(amount, result.amount());
-        assertEquals(customerAccount.getId(), result.accountId());
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        ArgumentCaptor<List<LedgerEntry>> entriesCaptor = ArgumentCaptor.forClass(List.class);
+        @Test
+        void deposit_frozenAccount_throwsException() {
 
-        verify(ledgerService).recordTransaction(
-                any(Transaction.class),
-                entriesCaptor.capture());
+                // Arrange
+                Long accountId = 1L;
+                DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
 
-        List<LedgerEntry> entries = entriesCaptor.getValue();
+                customerAccount.setStatus(AccountStatus.FROZEN);
 
-        assertEquals(2, entries.size());
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        LedgerEntry debitEntry = entries.stream()
-                .filter(entry -> entry.getEntryType() == EntryType.DEBIT)
-                .findFirst()
-                .orElseThrow();
+                // Act & Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.deposit(accountId, request));
 
-        LedgerEntry creditEntry = entries.stream()
-                .filter(entry -> entry.getEntryType() == EntryType.CREDIT)
-                .findFirst()
-                .orElseThrow();
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        assertEquals(systemAccount, debitEntry.getAccount());
-        assertEquals(customerAccount, creditEntry.getAccount());
-        assertEquals(amount, debitEntry.getAmount());
-        assertEquals(amount, creditEntry.getAmount());
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        verify(eventService).recordEvent(
-                eq(customerAccount),
-                any(Transaction.class),
-                eq(EventType.DEPOSIT),
-                eq(null),
-                any());
-    }
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-    @Test
-    void deposit_accountNotFound_throwsException() {
+        @Test
+        void deposit_closedAccount_throwsException() {
 
-        // Arrange
-        Long accountId = 999L;
-        DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
+                // Arrange
+                Long accountId = 1L;
+                DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.empty());
+                customerAccount.setStatus(AccountStatus.CLOSED);
 
-        // Act & Assert
-        assertThrows(
-                AccountNotFoundException.class,
-                () -> transactionService.deposit(accountId, request));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                // Act & Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.deposit(accountId, request));
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-    @Test
-    void deposit_frozenAccount_throwsException() {
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        // Arrange
-        Long accountId = 1L;
-        DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        customerAccount.setStatus(AccountStatus.FROZEN);
+        @Test
+        void deposit_systemCashAccount_throwsNotFoundException() {
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                // Arrange
+                Long accountId = 1L;
+                DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
 
-        // Act & Assert
-        assertThrows(
-                AccountNotEligibleForTransactionException.class,
-                () -> transactionService.deposit(accountId, request));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(systemAccount));
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                // Act & Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.deposit(accountId, request));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-    @Test
-    void deposit_closedAccount_throwsException() {
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        // Arrange
-        Long accountId = 1L;
-        DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
+        @Test
+        void deposit_systemCashAccountMissing_throwsIllegalStateException() {
 
-        customerAccount.setStatus(AccountStatus.CLOSED);
+                // Arrange
+                Long accountId = 1L;
+                DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        // Act & Assert
-        assertThrows(
-                AccountNotEligibleForTransactionException.class,
-                () -> transactionService.deposit(accountId, request));
+                when(accountRepository.findByAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
+                                .thenReturn(Optional.empty());
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                // Act & Assert
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> transactionService.deposit(accountId, request));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-    @Test
-    void deposit_systemCashAccount_throwsNotFoundException() {
+        @Test
+        void withdraw_success() {
 
-        // Arrange
-        Long accountId = 1L;
-        DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
+                // Arrange
+                Long accountId = 1L;
+                BigDecimal amount = new BigDecimal("40.00");
+                WithdrawalRequest request = new WithdrawalRequest(amount);
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(systemAccount));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        // Act & Assert
-        assertThrows(
-                AccountNotFoundException.class,
-                () -> transactionService.deposit(accountId, request));
+                when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
+                                .thenReturn(new BigDecimal("100.00"));
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                when(accountRepository.findByAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
+                                .thenReturn(Optional.of(systemAccount));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                // Act
+                TransactionResponse result = transactionService.withdraw(accountId, request);
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                // Assert
+                assertEquals(TransactionType.WITHDRAWAL, result.transactionType());
+                assertEquals(TransactionStatus.COMPLETED, result.status());
+                assertEquals(amount, result.amount());
 
-    @Test
-    void deposit_systemCashAccountMissing_throwsIllegalStateException() {
+                ArgumentCaptor<List<LedgerEntry>> entriesCaptor = ArgumentCaptor.forClass(List.class);
 
-        // Arrange
-        Long accountId = 1L;
-        DepositRequest request = new DepositRequest(new BigDecimal("100.00"));
+                verify(ledgerService).recordTransaction(
+                                any(Transaction.class),
+                                entriesCaptor.capture());
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                List<LedgerEntry> entries = entriesCaptor.getValue();
 
-        when(accountRepository.findByAccountNumber(
-                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
-                .thenReturn(Optional.empty());
+                assertEquals(2, entries.size());
 
-        // Act & Assert
-        assertThrows(
-                IllegalStateException.class,
-                () -> transactionService.deposit(accountId, request));
+                LedgerEntry debitEntry = entries.stream()
+                                .filter(entry -> entry.getEntryType() == EntryType.DEBIT)
+                                .findFirst()
+                                .orElseThrow();
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                LedgerEntry creditEntry = entries.stream()
+                                .filter(entry -> entry.getEntryType() == EntryType.CREDIT)
+                                .findFirst()
+                                .orElseThrow();
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                assertEquals(customerAccount, debitEntry.getAccount());
+                assertEquals(systemAccount, creditEntry.getAccount());
+                assertEquals(amount, debitEntry.getAmount());
+                assertEquals(amount, creditEntry.getAmount());
 
-    @Test
-    void withdraw_success() {
+                verify(ledgerEntryRepository)
+                                .computeBalanceByAccountId(accountId);
 
-        // Arrange
-        Long accountId = 1L;
-        BigDecimal amount = new BigDecimal("40.00");
-        WithdrawalRequest request = new WithdrawalRequest(amount);
+                verify(eventService).recordEvent(
+                                eq(customerAccount),
+                                any(Transaction.class),
+                                eq(EventType.WITHDRAWAL),
+                                eq(null),
+                                any());
+        }
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+        @Test
+        void withdraw_exactBalance_success() {
 
-        when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
-                .thenReturn(new BigDecimal("100.00"));
+                // Arrange
+                Long accountId = 1L;
+                BigDecimal amount = new BigDecimal("100.00");
+                WithdrawalRequest request = new WithdrawalRequest(amount);
 
-        when(accountRepository.findByAccountNumber(
-                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
-                .thenReturn(Optional.of(systemAccount));
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        // Act
-        TransactionResponse result = transactionService.withdraw(accountId, request);
+                when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
+                                .thenReturn(new BigDecimal("100.00"));
 
-        // Assert
-        assertEquals(TransactionType.WITHDRAWAL, result.transactionType());
-        assertEquals(TransactionStatus.COMPLETED, result.status());
-        assertEquals(amount, result.amount());
+                when(accountRepository.findByAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
+                                .thenReturn(Optional.of(systemAccount));
 
-        ArgumentCaptor<List<LedgerEntry>> entriesCaptor = ArgumentCaptor.forClass(List.class);
+                // Act
+                TransactionResponse result = transactionService.withdraw(accountId, request);
 
-        verify(ledgerService).recordTransaction(
-                any(Transaction.class),
-                entriesCaptor.capture());
+                // Assert
+                assertEquals(TransactionType.WITHDRAWAL, result.transactionType());
+                assertEquals(TransactionStatus.COMPLETED, result.status());
+                assertEquals(amount, result.amount());
 
-        List<LedgerEntry> entries = entriesCaptor.getValue();
+                verify(ledgerService).recordTransaction(
+                                any(Transaction.class),
+                                any());
 
-        assertEquals(2, entries.size());
+                verify(eventService).recordEvent(
+                                eq(customerAccount),
+                                any(Transaction.class),
+                                eq(EventType.WITHDRAWAL),
+                                eq(null),
+                                any());
+        }
 
-        LedgerEntry debitEntry = entries.stream()
-                .filter(entry -> entry.getEntryType() == EntryType.DEBIT)
-                .findFirst()
-                .orElseThrow();
+        @Test
+        void withdraw_insufficientFunds_throwsException() {
 
-        LedgerEntry creditEntry = entries.stream()
-                .filter(entry -> entry.getEntryType() == EntryType.CREDIT)
-                .findFirst()
-                .orElseThrow();
+                // Arrange
+                Long accountId = 1L;
+                BigDecimal amount = new BigDecimal("150.00");
+                WithdrawalRequest request = new WithdrawalRequest(amount);
 
-        assertEquals(customerAccount, debitEntry.getAccount());
-        assertEquals(systemAccount, creditEntry.getAccount());
-        assertEquals(amount, debitEntry.getAmount());
-        assertEquals(amount, creditEntry.getAmount());
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        verify(ledgerEntryRepository)
-                .computeBalanceByAccountId(accountId);
+                when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
+                                .thenReturn(new BigDecimal("100.00"));
 
-        verify(eventService).recordEvent(
-                eq(customerAccount),
-                any(Transaction.class),
-                eq(EventType.WITHDRAWAL),
-                eq(null),
-                any());
-    }
+                // Act & Assert
+                assertThrows(
+                                InsufficientFundsException.class,
+                                () -> transactionService.withdraw(accountId, request));
 
-    @Test
-    void withdraw_exactBalance_success() {
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        // Arrange
-        Long accountId = 1L;
-        BigDecimal amount = new BigDecimal("100.00");
-        WithdrawalRequest request = new WithdrawalRequest(amount);
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
-                .thenReturn(new BigDecimal("100.00"));
+        @Test
+        void withdraw_frozenAccount_throwsException() {
 
-        when(accountRepository.findByAccountNumber(
-                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER))
-                .thenReturn(Optional.of(systemAccount));
+                // Arrange
+                Long accountId = 1L;
+                WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
 
-        // Act
-        TransactionResponse result = transactionService.withdraw(accountId, request);
+                customerAccount.setStatus(AccountStatus.FROZEN);
 
-        // Assert
-        assertEquals(TransactionType.WITHDRAWAL, result.transactionType());
-        assertEquals(TransactionStatus.COMPLETED, result.status());
-        assertEquals(amount, result.amount());
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        verify(ledgerService).recordTransaction(
-                any(Transaction.class),
-                any());
+                // Act & Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.withdraw(accountId, request));
 
-        verify(eventService).recordEvent(
-                eq(customerAccount),
-                any(Transaction.class),
-                eq(EventType.WITHDRAWAL),
-                eq(null),
-                any());
-    }
+                verify(ledgerEntryRepository, never())
+                                .computeBalanceByAccountId(accountId);
 
-    @Test
-    void withdraw_insufficientFunds_throwsException() {
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        // Arrange
-        Long accountId = 1L;
-        BigDecimal amount = new BigDecimal("150.00");
-        WithdrawalRequest request = new WithdrawalRequest(amount);
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        when(ledgerEntryRepository.computeBalanceByAccountId(accountId))
-                .thenReturn(new BigDecimal("100.00"));
+        @Test
+        void withdraw_closedAccount_throwsException() {
 
-        // Act & Assert
-        assertThrows(
-                InsufficientFundsException.class,
-                () -> transactionService.withdraw(accountId, request));
+                // Arrange
+                Long accountId = 1L;
+                WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                customerAccount.setStatus(AccountStatus.CLOSED);
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(customerAccount));
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                // Act & Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.withdraw(accountId, request));
 
-    @Test
-    void withdraw_frozenAccount_throwsException() {
+                verify(ledgerEntryRepository, never())
+                                .computeBalanceByAccountId(accountId);
 
-        // Arrange
-        Long accountId = 1L;
-        WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        customerAccount.setStatus(AccountStatus.FROZEN);
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        // Act & Assert
-        assertThrows(
-                AccountNotEligibleForTransactionException.class,
-                () -> transactionService.withdraw(accountId, request));
+        @Test
+        void withdraw_systemCashAccount_throwsNotFoundException() {
 
-        verify(ledgerEntryRepository, never())
-                .computeBalanceByAccountId(accountId);
+                // Arrange
+                Long accountId = 1L;
+                WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                when(accountRepository.findByIdForUpdate(accountId))
+                                .thenReturn(Optional.of(systemAccount));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                // Act & Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.withdraw(accountId, request));
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                verify(ledgerEntryRepository, never())
+                                .computeBalanceByAccountId(accountId);
 
-    @Test
-    void withdraw_closedAccount_throwsException() {
+                verify(accountRepository, never())
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
 
-        // Arrange
-        Long accountId = 1L;
-        WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
+                verify(ledgerService, never())
+                                .recordTransaction(any(Transaction.class), any());
 
-        customerAccount.setStatus(AccountStatus.CLOSED);
+                verify(eventService, never())
+                                .recordEvent(any(), any(), any(), any(), any());
+        }
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(customerAccount));
+        @Test
+        void transfer_success() {
 
-        // Act & Assert
-        assertThrows(
-                AccountNotEligibleForTransactionException.class,
-                () -> transactionService.withdraw(accountId, request));
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+                BigDecimal amount = new BigDecimal("100.00");
 
-        verify(ledgerEntryRepository, never())
-                .computeBalanceByAccountId(accountId);
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                amount);
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                when(ledgerEntryRepository.computeBalanceByAccountId(sourceAccountId))
+                                .thenReturn(new BigDecimal("500.00"));
 
-    @Test
-    void withdraw_systemCashAccount_throwsNotFoundException() {
+                // Act
+                TransferResponse response = transactionService.transfer(request);
 
-        // Arrange
-        Long accountId = 1L;
-        WithdrawalRequest request = new WithdrawalRequest(new BigDecimal("40.00"));
+                // Assert
+                assertEquals(amount, response.amount());
+                assertEquals(TransactionType.TRANSFER, response.transactionType());
+                assertEquals(TransactionStatus.COMPLETED, response.status());
 
-        when(accountRepository.findByIdForUpdate(accountId))
-                .thenReturn(Optional.of(systemAccount));
+                ArgumentCaptor<Transaction> transactionCaptor = ArgumentCaptor.forClass(Transaction.class);
 
-        // Act & Assert
-        assertThrows(
-                AccountNotFoundException.class,
-                () -> transactionService.withdraw(accountId, request));
+                ArgumentCaptor<List<LedgerEntry>> entriesCaptor = ArgumentCaptor.forClass(List.class);
 
-        verify(ledgerEntryRepository, never())
-                .computeBalanceByAccountId(accountId);
+                verify(ledgerService, times(1)).recordTransaction(
+                                transactionCaptor.capture(),
+                                entriesCaptor.capture());
 
-        verify(accountRepository, never())
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+                Transaction transaction = transactionCaptor.getValue();
+                List<LedgerEntry> entries = entriesCaptor.getValue();
 
-        verify(ledgerService, never())
-                .recordTransaction(any(Transaction.class), any());
+                assertEquals(TransactionType.TRANSFER,
+                                transaction.getTransactionType());
 
-        verify(eventService, never())
-                .recordEvent(any(), any(), any(), any(), any());
-    }
+                assertEquals(TransactionStatus.COMPLETED,
+                                transaction.getStatus());
 
+                assertEquals(2, entries.size());
+                assertEquals(transaction, entries.get(0).getTransaction());
+                assertEquals(transaction, entries.get(1).getTransaction());
+
+                LedgerEntry debitEntry = entries.get(0);
+                LedgerEntry creditEntry = entries.get(1);
+
+                assertEquals(sourceAccount, debitEntry.getAccount());
+                assertEquals(EntryType.DEBIT, debitEntry.getEntryType());
+                assertEquals(amount, debitEntry.getAmount());
+
+                assertEquals(destinationAccount, creditEntry.getAccount());
+                assertEquals(EntryType.CREDIT, creditEntry.getEntryType());
+                assertEquals(amount, creditEntry.getAmount());
+                assertEquals(
+                                debitEntry.getAmount(),
+                                creditEntry.getAmount());
+
+                assertEquals(
+                                request.amount(),
+                                debitEntry.getAmount());
+
+                assertEquals(
+                                request.amount(),
+                                creditEntry.getAmount());
+
+                verify(eventService, times(1)).recordEvent(
+                                eq(sourceAccount),
+                                eq(transaction),
+                                eq(EventType.TRANSFER_DEBIT),
+                                eq(null),
+                                any());
+
+                verify(eventService, times(1)).recordEvent(
+                                eq(destinationAccount),
+                                eq(transaction),
+                                eq(EventType.TRANSFER_CREDIT),
+                                eq(null),
+                                any());
+        }
+
+        @Test
+        void transfer_sameSourceAndDestination_throwsInvalidTransferException() {
+
+                // Arrange
+                Long accountId = 1L;
+
+                TransferRequest request = new TransferRequest(
+                                accountId,
+                                accountId,
+                                new BigDecimal("100.00"));
+
+                // Act + Assert
+                assertThrows(
+                                InvalidTransferException.class,
+                                () -> transactionService.transfer(request));
+
+                verifyNoInteractions(accountRepository);
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_sourceAccountNotFound_throwsAccountNotFoundException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                new BigDecimal("100.00"));
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.empty());
+
+                // Act + Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.transfer(request));
+
+                verify(accountRepository)
+                                .findByIdForUpdate(sourceAccountId);
+
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_destinationAccountNotFound_throwsAccountNotFoundException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                new BigDecimal("100.00"));
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.empty());
+
+                // Act + Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.transfer(request));
+
+                verify(accountRepository)
+                                .findByIdForUpdate(sourceAccountId);
+
+                verify(accountRepository)
+                                .findByIdForUpdate(destinationAccountId);
+
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_sourceSystemCashAccount_throwsAccountNotFoundException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                sourceAccount.setAccountNumber(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER);
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                new BigDecimal("100.00"));
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                // Act + Assert
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.transfer(request));
+
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_inactiveSourceAccount_throwsAccountNotEligibleForTransactionException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                sourceAccount.setStatus(AccountStatus.FROZEN);
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                new BigDecimal("100.00"));
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                // Act + Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.transfer(request));
+
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_inactiveDestinationAccount_throwsAccountNotEligibleForTransactionException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                destinationAccount.setStatus(AccountStatus.FROZEN);
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                new BigDecimal("100.00"));
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                // Act + Assert
+                assertThrows(
+                                AccountNotEligibleForTransactionException.class,
+                                () -> transactionService.transfer(request));
+
+                verifyNoInteractions(ledgerEntryRepository);
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_insufficientFunds_throwsInsufficientFundsException() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                BigDecimal balance = new BigDecimal("50.00");
+                BigDecimal transferAmount = new BigDecimal("100.00");
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                transferAmount);
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                when(ledgerEntryRepository.computeBalanceByAccountId(sourceAccountId))
+                                .thenReturn(balance);
+
+                // Act + Assert
+                assertThrows(
+                                InsufficientFundsException.class,
+                                () -> transactionService.transfer(request));
+
+                verifyNoInteractions(ledgerService);
+                verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void transfer_exactBalance_succeeds() {
+
+                // Arrange
+                Long sourceAccountId = 1L;
+                Long destinationAccountId = 2L;
+
+                BigDecimal amount = new BigDecimal("100.00");
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                amount);
+
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                when(ledgerEntryRepository.computeBalanceByAccountId(sourceAccountId))
+                                .thenReturn(amount);
+
+                // Act
+                TransferResponse response = transactionService.transfer(request);
+
+                // Assert
+                assertEquals(amount, response.amount());
+
+                verify(ledgerService).recordTransaction(
+                                any(Transaction.class),
+                                anyList());
+
+                verify(eventService).recordEvent(
+                                eq(sourceAccount),
+                                any(Transaction.class),
+                                eq(EventType.TRANSFER_DEBIT),
+                                eq(null),
+                                any());
+
+                verify(eventService).recordEvent(
+                                eq(destinationAccount),
+                                any(Transaction.class),
+                                eq(EventType.TRANSFER_CREDIT),
+                                eq(null),
+                                any());
+        }
+
+        @Test
+        void transfer_locksAccountsInAscendingIdOrder() {
+
+                // Arrange
+                Long sourceAccountId = 2L;
+                Long destinationAccountId = 1L;
+
+                BigDecimal amount = new BigDecimal("100.00");
+
+                TransferRequest request = new TransferRequest(
+                                sourceAccountId,
+                                destinationAccountId,
+                                amount);
+
+                // The implementation should lock ID 1 first.
+                when(accountRepository.findByIdForUpdate(destinationAccountId))
+                                .thenReturn(Optional.of(destinationAccount));
+
+                // Then lock ID 2.
+                when(accountRepository.findByIdForUpdate(sourceAccountId))
+                                .thenReturn(Optional.of(sourceAccount));
+
+                when(ledgerEntryRepository.computeBalanceByAccountId(sourceAccountId))
+                                .thenReturn(new BigDecimal("500.00"));
+
+                // Act
+                transactionService.transfer(request);
+
+                // Assert
+                InOrder inOrder = inOrder(accountRepository);
+
+                inOrder.verify(accountRepository)
+                                .findByIdForUpdate(destinationAccountId);
+
+                inOrder.verify(accountRepository)
+                                .findByIdForUpdate(sourceAccountId);
+        }
 }

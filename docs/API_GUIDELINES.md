@@ -433,7 +433,7 @@ Every API should follow these rules.
 
 # 21. Implemented Endpoints Reference
 
-This section documents the endpoints implemented through Phase 4.
+This section documents the endpoints implemented through Phase 5.
 
 ---
 
@@ -540,15 +540,66 @@ Withdraws funds from a customer account.
 
 ---
 
+## Transfer Endpoints (Phase 5)
+
+### POST /transfers
+
+Transfers funds between two distinct ACTIVE customer accounts.
+
+**Request Body:** `TransferRequest`
+
+```json
+{
+  "sourceAccountId": 1,
+  "destinationAccountId": 2,
+  "amount": "100.00"
+}
+```
+
+- `sourceAccountId`: required, must be a positive integer
+- `destinationAccountId`: required, must be a positive integer
+- `amount`: required, must be `> 0`, maximum 17 integer digits, 2 decimal places
+
+**Success Response:** `201 Created` — `TransferResponse`
+
+```json
+{
+  "transactionId": 44,
+  "referenceNumber": "773a0622-g41d-63f6-c938-668877662222",
+  "transactionType": "TRANSFER",
+  "status": "COMPLETED",
+  "sourceAccountId": 1,
+  "destinationAccountId": 2,
+  "amount": "100.00",
+  "createdAt": "2026-09-07T01:32:00Z"
+}
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `amount` is null, zero, negative, or exceeds precision |
+| 400 | `sourceAccountId` or `destinationAccountId` is null or not a positive integer |
+| 404 | Source or destination account not found |
+| 404 | Source or destination account resolves to `SYS-CASH` |
+| 422 | Source and destination account IDs are identical (`InvalidTransferException`) |
+| 422 | Source or destination account status is `FROZEN` or `CLOSED` (`AccountNotEligibleForTransactionException`) |
+| 422 | Transfer amount exceeds source account's derived ledger balance (`InsufficientFundsException`) |
+
+---
+
 ## SYS-CASH System Account
 
 `SYS-CASH` is an internal system contra-account used for double-entry accounting in
-deposit and withdrawal operations. It is not a customer account and is not exposed
-through any public API:
+single-account deposit and withdrawal operations. It is not a customer account and is
+not exposed through any public API:
 
 - It does not appear in `GET /accounts` paginated results.
-- All public account lookup, status mutation, deposit, and withdrawal operations return
-  404 when the target account resolves to `SYS-CASH`.
+- All public account lookup, status mutation, deposit, withdrawal, and transfer
+  operations return 404 when any target account resolves to `SYS-CASH`.
+- Customer-to-customer transfers operate directly between customer accounts and do
+  not involve `SYS-CASH`.
 
 Clients cannot interact with `SYS-CASH` through any documented endpoint.
 

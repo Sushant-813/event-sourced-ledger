@@ -25,7 +25,7 @@ import com.ledger.ledger.exception.UnbalancedLedgerException;
 import com.ledger.event.exception.EventNotFoundException;
 import com.ledger.transaction.exception.AccountNotEligibleForTransactionException;
 import com.ledger.transaction.exception.InsufficientFundsException;
-
+import com.ledger.transaction.exception.InvalidTransferException;
 import java.util.stream.Collectors;
 
 /**
@@ -379,6 +379,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
                 log.warn("422 Account not eligible for transaction on {}: {}",
                                 path, ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                                HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity
+                                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                                .body(body);
+        }
+        // -------------------------------------------------------------------------
+        // 422 — Invalid transfer
+        // -------------------------------------------------------------------------
+
+        /**
+         * Handles business-rule violations specific to account transfers.
+         */
+        @ExceptionHandler(InvalidTransferException.class)
+        public ResponseEntity<ApiError> handleInvalidTransfer(
+                        InvalidTransferException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn("422 Invalid transfer on {}: {}", path, ex.getMessage());
 
                 ApiError body = ApiError.of(
                                 HttpStatus.UNPROCESSABLE_ENTITY.value(),

@@ -13,6 +13,8 @@ import com.ledger.ledger.repository.LedgerEntryRepository;
 import com.ledger.ledger.service.LedgerService;
 import com.ledger.transaction.dto.DepositRequest;
 import com.ledger.transaction.dto.TransactionResponse;
+import com.ledger.transaction.dto.TransferRequest;
+import com.ledger.transaction.dto.TransferResponse;
 import com.ledger.transaction.dto.WithdrawalRequest;
 import com.ledger.transaction.entity.Transaction;
 import com.ledger.transaction.entity.TransactionStatus;
@@ -21,6 +23,7 @@ import com.ledger.transaction.exception.AccountNotEligibleForTransactionExceptio
 import com.ledger.transaction.exception.InsufficientFundsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ledger.transaction.exception.InvalidTransferException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -31,163 +34,274 @@ import java.util.UUID;
 @Service
 public class TransactionServiceImpl implements TransactionService {
 
-    private final AccountRepository accountRepository;
-    private final LedgerEntryRepository ledgerEntryRepository;
-    private final LedgerService ledgerService;
-    private final EventService eventService;
+        private final AccountRepository accountRepository;
+        private final LedgerEntryRepository ledgerEntryRepository;
+        private final LedgerService ledgerService;
+        private final EventService eventService;
 
-    public TransactionServiceImpl(
-            AccountRepository accountRepository,
-            LedgerEntryRepository ledgerEntryRepository,
-            LedgerService ledgerService,
-            EventService eventService) {
-        this.accountRepository = accountRepository;
-        this.ledgerEntryRepository = ledgerEntryRepository;
-        this.ledgerService = ledgerService;
-        this.eventService = eventService;
-    }
-
-    // methods will go here
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public TransactionResponse deposit(Long accountId, DepositRequest request) {
-
-        Account customerAccount = accountRepository.findByIdForUpdate(accountId)
-                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
-
-        if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
-                .equals(customerAccount.getAccountNumber())) {
-            throw new AccountNotFoundException("Account not found: " + accountId);
+        public TransactionServiceImpl(
+                        AccountRepository accountRepository,
+                        LedgerEntryRepository ledgerEntryRepository,
+                        LedgerService ledgerService,
+                        EventService eventService) {
+                this.accountRepository = accountRepository;
+                this.ledgerEntryRepository = ledgerEntryRepository;
+                this.ledgerService = ledgerService;
+                this.eventService = eventService;
         }
 
-        if (customerAccount.getStatus() != AccountStatus.ACTIVE) {
-            throw new AccountNotEligibleForTransactionException(
-                    "Account is not eligible for transaction: " + accountId);
+        @Override
+        @Transactional(rollbackFor = Exception.class)
+        public TransactionResponse deposit(Long accountId, DepositRequest request) {
+
+                Account customerAccount = accountRepository.findByIdForUpdate(accountId)
+                                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
+
+                if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
+                                .equals(customerAccount.getAccountNumber())) {
+                        throw new AccountNotFoundException("Account not found: " + accountId);
+                }
+
+                if (customerAccount.getStatus() != AccountStatus.ACTIVE) {
+                        throw new AccountNotEligibleForTransactionException(
+                                        "Account is not eligible for transaction: " + accountId);
+                }
+
+                Account systemAccount = accountRepository
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
+                                .orElseThrow(() -> new IllegalStateException(
+                                                "System cash account is missing"));
+
+                String referenceNumber = UUID.randomUUID().toString();
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+                Transaction transaction = new Transaction(
+                                referenceNumber,
+                                TransactionType.DEPOSIT,
+                                TransactionStatus.COMPLETED,
+                                now);
+
+                LedgerEntry debitEntry = new LedgerEntry(
+                                transaction,
+                                systemAccount,
+                                EntryType.DEBIT,
+                                request.amount(),
+                                now);
+
+                LedgerEntry creditEntry = new LedgerEntry(
+                                transaction,
+                                customerAccount,
+                                EntryType.CREDIT,
+                                request.amount(),
+                                now);
+
+                ledgerService.recordTransaction(
+                                transaction,
+                                List.of(debitEntry, creditEntry));
+
+                eventService.recordEvent(
+                                customerAccount,
+                                transaction,
+                                EventType.DEPOSIT,
+                                null,
+                                now);
+
+                return new TransactionResponse(
+                                transaction.getId(),
+                                transaction.getReferenceNumber(),
+                                transaction.getTransactionType(),
+                                transaction.getStatus(),
+                                customerAccount.getId(),
+                                request.amount(),
+                                transaction.getCreatedAt());
         }
 
-        Account systemAccount = accountRepository
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
-                .orElseThrow(() -> new IllegalStateException(
-                        "System cash account is missing"));
+        @Override
+        @Transactional(rollbackFor = Exception.class)
+        public TransactionResponse withdraw(
+                        Long accountId,
+                        WithdrawalRequest request) {
 
-        String referenceNumber = UUID.randomUUID().toString();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+                Account customerAccount = accountRepository.findByIdForUpdate(accountId)
+                                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
-        Transaction transaction = new Transaction(
-                referenceNumber,
-                TransactionType.DEPOSIT,
-                TransactionStatus.COMPLETED,
-                now);
+                if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
+                                .equals(customerAccount.getAccountNumber())) {
+                        throw new AccountNotFoundException("Account not found: " + accountId);
+                }
 
-        LedgerEntry debitEntry = new LedgerEntry(
-                transaction,
-                systemAccount,
-                EntryType.DEBIT,
-                request.amount(),
-                now);
+                if (customerAccount.getStatus() != AccountStatus.ACTIVE) {
+                        throw new AccountNotEligibleForTransactionException(
+                                        "Account is not eligible for transaction: " + accountId);
+                }
 
-        LedgerEntry creditEntry = new LedgerEntry(
-                transaction,
-                customerAccount,
-                EntryType.CREDIT,
-                request.amount(),
-                now);
+                BigDecimal balance = ledgerEntryRepository.computeBalanceByAccountId(accountId);
 
-        ledgerService.recordTransaction(
-                transaction,
-                List.of(debitEntry, creditEntry));
+                if (balance.compareTo(request.amount()) < 0) {
+                        throw new InsufficientFundsException(
+                                        "Insufficient funds for account: " + accountId);
+                }
 
-        eventService.recordEvent(
-                customerAccount,
-                transaction,
-                EventType.DEPOSIT,
-                null,
-                now);
+                Account systemAccount = accountRepository
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
+                                .orElseThrow(() -> new IllegalStateException(
+                                                "System cash account is missing"));
 
-        return new TransactionResponse(
-                transaction.getId(),
-                transaction.getReferenceNumber(),
-                transaction.getTransactionType(),
-                transaction.getStatus(),
-                customerAccount.getId(),
-                request.amount(),
-                transaction.getCreatedAt());
-    }
+                String referenceNumber = UUID.randomUUID().toString();
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public TransactionResponse withdraw(
-            Long accountId,
-            WithdrawalRequest request) {
+                Transaction transaction = new Transaction(
+                                referenceNumber,
+                                TransactionType.WITHDRAWAL,
+                                TransactionStatus.COMPLETED,
+                                now);
 
-        Account customerAccount = accountRepository.findByIdForUpdate(accountId)
-                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
+                LedgerEntry debitEntry = new LedgerEntry(
+                                transaction,
+                                customerAccount,
+                                EntryType.DEBIT,
+                                request.amount(),
+                                now);
 
-        if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
-                .equals(customerAccount.getAccountNumber())) {
-            throw new AccountNotFoundException("Account not found: " + accountId);
+                LedgerEntry creditEntry = new LedgerEntry(
+                                transaction,
+                                systemAccount,
+                                EntryType.CREDIT,
+                                request.amount(),
+                                now);
+
+                ledgerService.recordTransaction(
+                                transaction,
+                                List.of(debitEntry, creditEntry));
+
+                eventService.recordEvent(
+                                customerAccount,
+                                transaction,
+                                EventType.WITHDRAWAL,
+                                null,
+                                now);
+
+                return new TransactionResponse(
+                                transaction.getId(),
+                                transaction.getReferenceNumber(),
+                                transaction.getTransactionType(),
+                                transaction.getStatus(),
+                                customerAccount.getId(),
+                                request.amount(),
+                                transaction.getCreatedAt());
         }
 
-        if (customerAccount.getStatus() != AccountStatus.ACTIVE) {
-            throw new AccountNotEligibleForTransactionException(
-                    "Account is not eligible for transaction: " + accountId);
+        @Override
+        @Transactional(rollbackFor = Exception.class)
+        public TransferResponse transfer(TransferRequest request) {
+
+                if (request.sourceAccountId().equals(request.destinationAccountId())) {
+                        throw new InvalidTransferException(
+                                        "Source and destination accounts must be different");
+                }
+
+                Long sourceAccountId = request.sourceAccountId();
+                Long destinationAccountId = request.destinationAccountId();
+
+                Long lowerAccountId = Math.min(sourceAccountId, destinationAccountId);
+                Long higherAccountId = Math.max(sourceAccountId, destinationAccountId);
+
+                Account lowerAccount = accountRepository.findByIdForUpdate(lowerAccountId)
+                                .orElseThrow(() -> new AccountNotFoundException(
+                                                "Account not found with ID: " + lowerAccountId));
+
+                Account higherAccount = accountRepository.findByIdForUpdate(higherAccountId)
+                                .orElseThrow(() -> new AccountNotFoundException(
+                                                "Account not found with ID: " + higherAccountId));
+
+                Account sourceAccount = sourceAccountId.equals(lowerAccountId)
+                                ? lowerAccount
+                                : higherAccount;
+
+                Account destinationAccount = destinationAccountId.equals(lowerAccountId)
+                                ? lowerAccount
+                                : higherAccount;
+
+                if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
+                                .equals(sourceAccount.getAccountNumber())) {
+                        throw new AccountNotFoundException(
+                                        "Account not found: " + sourceAccountId);
+                }
+
+                if (SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER
+                                .equals(destinationAccount.getAccountNumber())) {
+                        throw new AccountNotFoundException(
+                                        "Account not found: " + destinationAccountId);
+                }
+
+                if (sourceAccount.getStatus() != AccountStatus.ACTIVE) {
+                        throw new AccountNotEligibleForTransactionException(
+                                        "Account is not eligible for transaction: " + sourceAccountId);
+                }
+
+                if (destinationAccount.getStatus() != AccountStatus.ACTIVE) {
+                        throw new AccountNotEligibleForTransactionException(
+                                        "Account is not eligible for transaction: " + destinationAccountId);
+                }
+
+                BigDecimal sourceBalance = ledgerEntryRepository.computeBalanceByAccountId(sourceAccountId);
+
+                if (sourceBalance.compareTo(request.amount()) < 0) {
+                        throw new InsufficientFundsException(
+                                        "Insufficient funds for account: " + sourceAccountId);
+                }
+
+                String referenceNumber = UUID.randomUUID().toString();
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+                Transaction transaction = new Transaction(
+                                referenceNumber,
+                                TransactionType.TRANSFER,
+                                TransactionStatus.COMPLETED,
+                                now);
+
+                LedgerEntry debitEntry = new LedgerEntry(
+                                transaction,
+                                sourceAccount,
+                                EntryType.DEBIT,
+                                request.amount(),
+                                now);
+
+                LedgerEntry creditEntry = new LedgerEntry(
+                                transaction,
+                                destinationAccount,
+                                EntryType.CREDIT,
+                                request.amount(),
+                                now);
+
+                ledgerService.recordTransaction(
+                                transaction,
+                                List.of(debitEntry, creditEntry));
+
+                eventService.recordEvent(
+                                sourceAccount,
+                                transaction,
+                                EventType.TRANSFER_DEBIT,
+                                null,
+                                now);
+
+                eventService.recordEvent(
+                                destinationAccount,
+                                transaction,
+                                EventType.TRANSFER_CREDIT,
+                                null,
+                                now);
+
+                return new TransferResponse(
+                                transaction.getId(),
+                                transaction.getReferenceNumber(),
+                                transaction.getTransactionType(),
+                                transaction.getStatus(),
+                                sourceAccount.getId(),
+                                destinationAccount.getId(),
+                                request.amount(),
+                                transaction.getCreatedAt());
         }
-
-        BigDecimal balance = ledgerEntryRepository.computeBalanceByAccountId(accountId);
-
-        if (balance.compareTo(request.amount()) < 0) {
-            throw new InsufficientFundsException(
-                    "Insufficient funds for account: " + accountId);
-        }
-
-        Account systemAccount = accountRepository
-                .findByAccountNumber(
-                        SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
-                .orElseThrow(() -> new IllegalStateException(
-                        "System cash account is missing"));
-
-        String referenceNumber = UUID.randomUUID().toString();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-
-        Transaction transaction = new Transaction(
-                referenceNumber,
-                TransactionType.WITHDRAWAL,
-                TransactionStatus.COMPLETED,
-                now);
-
-        LedgerEntry debitEntry = new LedgerEntry(
-                transaction,
-                customerAccount,
-                EntryType.DEBIT,
-                request.amount(),
-                now);
-
-        LedgerEntry creditEntry = new LedgerEntry(
-                transaction,
-                systemAccount,
-                EntryType.CREDIT,
-                request.amount(),
-                now);
-
-        ledgerService.recordTransaction(
-                transaction,
-                List.of(debitEntry, creditEntry));
-
-        eventService.recordEvent(
-                customerAccount,
-                transaction,
-                EventType.WITHDRAWAL,
-                null,
-                now);
-
-        return new TransactionResponse(
-                transaction.getId(),
-                transaction.getReferenceNumber(),
-                transaction.getTransactionType(),
-                transaction.getStatus(),
-                customerAccount.getId(),
-                request.amount(),
-                transaction.getCreatedAt());
-    }
 }

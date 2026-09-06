@@ -24,7 +24,7 @@ alone.
 | Phase 2 | Ledger Foundation | **COMPLETED** (2026-08-13) |
 | Phase 3 | Event Store | **COMPLETED** (2026-09-03) |
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** (2026-09-06) |
-| Phase 5 | Transfer Engine | **NEXT** |
+| Phase 5 | Transfer Engine | **COMPLETED** (2026-09-07) |
 | Phase 6 | Balance Reconstruction | Pending |
 | Phase 7 | Audit Module | Pending |
 | Phase 8 | API Refinement | Pending |
@@ -156,11 +156,40 @@ Tests run: 85, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
+### Phase 5 — Transfer Engine (completed)
+
+Phase 5 introduced atomic customer-account transfers. The following is implemented and
+fully tested:
+
+- `POST /transfers` creates a completed `TRANSFER` transaction between two customer accounts
+- Source account receives a `DEBIT`; destination account receives an equal `CREDIT`; no
+  `SYS-CASH` entry participates
+- Source/destination validation covers existence, exact `SYS-CASH` isolation, `ACTIVE` status,
+  same-account rejection, valid amounts, and sufficient derived source balance
+- Both customer accounts are locked with `PESSIMISTIC_WRITE` in ascending account-ID order,
+  preventing opposite-direction lock-order inversion and serializing competing source debits
+- Two immutable events are recorded in the same transaction: `TRANSFER_DEBIT` for the source
+  account and `TRANSFER_CREDIT` for the destination account; both use a null payload
+- `TransferRequest` and `TransferResponse` DTOs, `TransferController`, and
+  `InvalidTransferException` (422) follow established API and error conventions
+- No schema migration was required; existing transaction, ledger-entry, and event structures
+  already support transfers
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 108, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+---
+
 ## Architecture
 
 ```
 Presentation  →  AccountController
                →  TransactionController
+               →  TransferController
 Application   →  AccountService / AccountServiceImpl
                →  TransactionService / TransactionServiceImpl
                →  LedgerService / LedgerServiceImpl
@@ -216,12 +245,13 @@ All responses conform to the standard `ApiError` error structure on failure.
 | `PATCH` | `/accounts/{id}/activate` | Transition account from `FROZEN` to `ACTIVE` |
 | `PATCH` | `/accounts/{id}/close` | Transition account to `CLOSED` (terminal state) |
 
-### Transaction Endpoints (Phase 4)
+### Transaction Endpoints (Phases 4–5)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/accounts/{accountId}/deposit` | Deposit funds into a customer account (returns 201) |
 | `POST` | `/accounts/{accountId}/withdrawal` | Withdraw funds from a customer account (returns 201) |
+| `POST` | `/transfers` | Transfer funds between customer accounts (returns 201) |
 
 Interactive API documentation is available at `/swagger-ui.html` when the application is
 running.
@@ -303,7 +333,7 @@ mvn clean test
 
 ## Testing
 
-Phase 1 through Phase 4 combined test suite (`mvn clean test`):
+Phase 1 through Phase 5 combined test suite (`mvn clean test`):
 
 | Test class | Type | Tests |
 |---|---|---|
@@ -311,19 +341,18 @@ Phase 1 through Phase 4 combined test suite (`mvn clean test`):
 | `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 14 |
 | `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
 | `EventServiceImplTest` | Unit (Mockito, no DB) | 16 |
-| `TransactionServiceImplTest` | Unit (Mockito, no DB) | 10 |
+| `TransactionServiceImplTest` | Unit (Mockito, no DB) | 22 |
 | `TransactionControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
-| `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 4 |
+| `TransferControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
+| `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 9 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
-| **Total** | | **83** |
-
-> **Note:** Two additional tests are counted in the Maven build for a verified total of **85** passing tests.
+| **Total** | | **108** |
 
 **Verified result:**
 
 ```
 mvn clean test
-Tests run: 85, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 108, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -363,7 +392,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-025) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-026) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -377,8 +406,8 @@ event-sourced-ledger/
 | Phase 2 | Ledger Foundation | **COMPLETED** |
 | Phase 3 | Event Store | **COMPLETED** |
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** |
-| Phase 5 | Transfer Engine | **NEXT** |
-| Phase 6 | Balance Reconstruction | Pending |
+| Phase 5 | Transfer Engine | **COMPLETED** |
+| Phase 6 | Balance Reconstruction | **NEXT** |
 | Phase 7 | Audit Module | Pending |
 | Phase 8 | API Refinement | Pending |
 | Phase 9 | Testing & Hardening | Pending |

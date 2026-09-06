@@ -183,7 +183,7 @@ per-account pessimistic row locking.
 
 # Phase 5 — Transfer Engine
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-07**
 
 ## Objective
 
@@ -191,19 +191,29 @@ Implement atomic account-to-account transfers.
 
 ## Deliverables
 
-- Transfer workflow
-- Debit generation
-- Credit generation
-- Atomic transactions
-- Business validation
+- Transfer workflow (`POST /transfers`, `TransferController`, `TransferRequest`, `TransferResponse`)
+- Debit generation (source account receives DEBIT)
+- Credit generation (destination account receives equal CREDIT)
+- Customer-to-customer double-entry ledger generation (no SYS-CASH participation)
+- Business validation (existence, eligibility, SYS-CASH isolation, same-account rejection)
+- Derived balance validation for source account
+- Deterministic ascending account-ID pessimistic row locking and role restoration
+- Event creation (`TRANSFER_DEBIT` and `TRANSFER_CREDIT` with null payload)
+- Atomic transaction management with full rollback on failure
 
 ## Success Criteria
 
-Transfers satisfy all accounting rules and remain atomic.
+Transfers satisfy all double-entry accounting rules, execute atomically, eliminate
+deadlocks under concurrent opposite-direction operations, and protect against
+concurrent double-spending.
+
+`mvn clean test` — **108 tests, 0 failures, BUILD SUCCESS**
 
 ---
 
 # Phase 6 — Balance Reconstruction
+
+**Status: NEXT**
 
 ## Objective
 

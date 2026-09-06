@@ -607,7 +607,104 @@ handles only HTTP concerns.
 
 ---
 
-# 16. Future Architecture Evolution
+# 16. Phase 5 Transfer Workflow
+
+Phase 5 implements customer-to-customer transfers as an atomic double-entry operation
+between two distinct active accounts, owned entirely by `TransactionServiceImpl`.
+
+## Request Lifecycle
+
+```
+Customer Request (POST /transfers)
+        │
+        ▼
+Request Validation (@Valid TransferRequest: positive IDs, valid amount)
+        │
+        ▼
+Validate same-account rejection
+ - Reject if sourceAccountId == destinationAccountId → InvalidTransferException (422)
+        │
+        ▼
+Acquire pessimistic row locks in ascending account-ID order
+ - lowerId = min(sourceAccountId, destinationAccountId)
+ - higherId = max(sourceAccountId, destinationAccountId)
+ - AccountRepository.findByIdForUpdate(lowerId)
+ - AccountRepository.findByIdForUpdate(higherId)
+        │
+        ▼
+Restore account roles
+ - Map lower/higher entity instances back to sourceAccount and destinationAccount
+        │
+        ▼
+Business Validation
+ - Missing account → AccountNotFoundException (404)
+ - Reject if source or destination resolves to SYS-CASH → AccountNotFoundException (404)
+ - Reject if source or destination status != ACTIVE → AccountNotEligibleForTransactionException (422)
+        │
+        ▼
+Derive source balance from LedgerEntry aggregation
+ (LedgerEntryRepository.computeBalanceByAccountId)
+ - Reject if sourceBalance < amount → InsufficientFundsException (422)
+        │
+        ▼
+Create Transaction (UUID reference number, TRANSFER type, COMPLETED status)
+        │
+        ▼
+Construct balanced LedgerEntry pair (direct customer-to-customer; no SYS-CASH)
+ - Source Account:      DEBIT  amount
+ - Destination Account: CREDIT amount
+        │
+        ▼
+Persist via LedgerService.recordTransaction
+ (validates double-entry invariants; saves Transaction + LedgerEntries)
+        │
+        ▼
+Record immutable Events via EventService.recordEvent
+ - Source Account:      TRANSFER_DEBIT  (payload = null)
+ - Destination Account: TRANSFER_CREDIT (payload = null)
+        │
+        ▼
+Commit atomically
+ (both PESSIMISTIC_WRITE locks released; all writes visible or none)
+        │
+        ▼
+Return TransferResponse (201 Created)
+```
+
+## Transaction Boundary
+
+`TransactionServiceImpl.transfer` owns the outer `@Transactional(rollbackFor = Exception.class)`
+boundary. Locking, account validation, balance verification, transaction creation, ledger
+entry persistence, and event generation all occur within this single database transaction.
+If any step fails or throws an exception, the entire transaction rolls back atomically.
+
+## Deadlock Prevention & Concurrency Model
+
+Customer transfers lock two account rows within a single transaction. To prevent cyclic
+deadlocks (Coffman's circular wait condition) between concurrent transfers in opposite
+directions (`Account A → Account B` vs `Account B → Account A`), locks are strictly acquired
+in ascending numerical order of account IDs (`min` then `max`).
+
+After both locks are acquired, domain roles (`sourceAccount` and `destinationAccount`) are
+restored. Holding write locks on both accounts for the duration of the transaction prevents
+concurrent double-spending and ensures that the source account's derived balance check
+remains authoritative.
+
+See ADR-026 for the full architectural rationale.
+
+## Accounting & Event Semantics
+
+- **No SYS-CASH participation:** Customer transfers represent a direct transfer of funds
+  between two customer accounts; `SYS-CASH` is reserved for single-account deposits and
+  withdrawals.
+- **Balanced ledger entries:** One `DEBIT` entry on the source account and one equal `CREDIT`
+  entry on the destination account satisfy the double-entry accounting invariant.
+- **Dual events:** Two events are recorded (`TRANSFER_DEBIT` and `TRANSFER_CREDIT`), each linked
+  to the respective account, sharing the same transaction ID and timestamp, with null payloads.
+
+---
+
+# 17. Future Architecture Evolution
 
 The current architecture intentionally focuses on a single-service implementation.
 
@@ -628,7 +725,7 @@ These enhancements should extend the existing architecture rather than replace i
 
 ---
 
-# 17. Guiding Philosophy
+# 18. Guiding Philosophy
 
 > **"Financial systems should preserve history, not overwrite it."**
 

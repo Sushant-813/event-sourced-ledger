@@ -1344,6 +1344,113 @@ Negative
 - Future multi-account operations such as transfers will require additional
   lock-ordering considerations
 
+---
+
+# ADR-026
+
+## Title
+
+Deterministic Ascending-ID Pessimistic Locking and Role Restoration for Account Transfers
+
+### Status
+
+Accepted
+
+### Context
+
+Phase 5 introduces customer-to-customer transfers where two distinct customer accounts
+must be updated within the same transaction.
+
+Unlike single-account deposits and withdrawals (Phase 4), a transfer involves acquiring
+pessimistic row locks on two separate account rows. If locks are acquired in the order
+specified by the request:
+- Transaction 1 (`Account A → Account B`) locks Account A, then attempts to lock Account B.
+- Transaction 2 (`Account B → Account A`) locks Account B, then attempts to lock Account A.
+
+This cyclic lock dependency causes a database deadlock (Coffman's circular wait condition),
+causing one transaction to be aborted by the database.
+
+Furthermore, transfers must read the source account's derived balance and ensure sufficient
+funds before creating ledger entries. If locks are not held on both accounts throughout the
+entire transaction, competing concurrent transfers or withdrawals could independently observe
+the same balance and double-spend.
+
+Finally, customer-to-customer transfers are direct transfers between two accounts; unlike
+single-account operations, they do not require the `SYS-CASH` system contra-account.
+
+### Decision
+
+1. Every customer transfer acquires `PESSIMISTIC_WRITE` locks on both customer account rows
+   using `AccountRepository.findByIdForUpdate(Long id)`.
+2. Locks are acquired in deterministic ascending account-ID order:
+   `lowerAccountId = Math.min(sourceAccountId, destinationAccountId)` is locked first,
+   followed by `higherAccountId = Math.max(sourceAccountId, destinationAccountId)`.
+3. Account roles (`sourceAccount` and `destinationAccount`) are restored immediately after
+   both locks are acquired, mapping the locked entity references back to their functional
+   transfer roles.
+4. Same-account transfers (`sourceAccountId.equals(destinationAccountId)`) are rejected
+   immediately before lock acquisition with `InvalidTransferException` (422).
+5. The system contra-account `SYS-CASH` does not participate in customer-to-customer
+   transfers; any transfer attempt referencing `SYS-CASH` as source or destination is
+   rejected with `AccountNotFoundException` (404).
+6. The entire transfer workflow—locking, validation, derived balance check, transaction
+   creation, double-entry ledger persistence (source DEBIT, destination CREDIT), and event
+   persistence (`TRANSFER_DEBIT`, `TRANSFER_CREDIT`)—executes within a single outer
+   `@Transactional(rollbackFor = Exception.class)` boundary.
+
+### Alternatives Considered
+
+- **Lock in request order (source first, destination second):** Rejected because concurrent
+  transfers between the same pair of accounts in opposite directions produce circular wait
+  deadlocks.
+- **Database deadlock detection with application-level retries:** Rejected because deadlocks
+  abort database transactions and cause error spikes, requiring complex retry backoff logic
+  and wasting database resources under high contention.
+- **Global mutex / application-level transfer lock:** Rejected because it serializes all
+  transfers across the entire system, creating an artificial throughput bottleneck for
+  unrelated accounts.
+- **Route customer transfers through SYS-CASH:** Rejected because customer-to-customer
+  transfers are direct balance transfers between two depositors; introducing intermediate
+  contra-entries would artificially inflate ledger volume and distort system cash reserves.
+- **Optimistic locking with `@Version`:** Rejected because it requires schema alterations
+  and introduces abort/retry semantics under concurrent load.
+
+### Rationale
+
+Enforcing a global lock acquisition order (ascending numerical account ID) mathematically
+breaks Coffman's circular wait condition, guaranteeing deadlock-free concurrency between
+any concurrent transfers, regardless of transfer direction.
+
+Restoring the functional `sourceAccount` and `destinationAccount` roles immediately after
+lock acquisition ensures that the deadlock-prevention mechanism remains cleanly isolated
+from business logic and validation rules.
+
+Customer-to-customer transfers naturally satisfy double-entry accounting through one DEBIT
+entry on the source and one equal CREDIT entry on the destination. Excluding `SYS-CASH`
+accurately reflects financial reality and preserves system contra-account isolation.
+
+Holding the row locks throughout the transaction guarantees that the derived source balance
+remains accurate and prevents concurrent double-spending.
+
+### Consequences
+
+Positive
+
+- Completely eliminates deadlocks between concurrent opposite-direction transfers
+- Prevents concurrent double-spending and overdrafts on customer accounts
+- Preserves double-entry ledger invariants without artificial contra-entries
+- Isolates concurrency control from business domain validation
+- Fully atomic: transaction, ledger entries, and events commit or roll back together
+- No schema changes required; operates cleanly on existing tables
+
+Negative
+
+- Holds two row locks for the duration of the transfer transaction
+- Concurrent operations targeting either participant account must wait for the lock release
+- Requires deliberate lock-ordering and role-restoration code in the service implementation
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.
