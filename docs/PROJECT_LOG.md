@@ -723,6 +723,109 @@ Phase 5 intentionally does NOT contain:
 
 - ADR-026: Deterministic Ascending-ID Pessimistic Locking and Role Restoration for Account Transfers
 
+---
+
+## 2026-09-08
+
+### Phase 6 — Balance Reconstruction: COMPLETED
+
+The internal Balance Reconstruction Engine has been fully implemented and verified
+following the approved Phase 6 implementation plan.
+
+#### What Was Implemented
+
+**Service Layer & Contract**
+
+- `BalanceReconstructionService` interface created in `com.ledger.balance.service`:
+  - `reconstructCurrentBalance(Long accountId)` — derives current balance from account event history
+  - `reconstructBalanceAt(Long accountId, OffsetDateTime asOf)` — derives historical point-in-time balance
+  - Both methods return `BigDecimal`
+- `BalanceReconstructionServiceImpl` implements `BalanceReconstructionService`, annotated
+  `@Transactional(readOnly = true)`:
+  - Validates account existence via `AccountRepository.findById(accountId)`, throwing `AccountNotFoundException`
+    if the account does not exist
+  - Strictly guards against `SYS-CASH` balance reconstruction, throwing `IllegalStateException`
+    with message `"Balance reconstruction is not supported for the SYS-CASH account"`
+  - Replays events chronologically using deterministic order (`occurredAt ASC, id ASC`)
+  - Treats `ACCOUNT_CREATED` as a non-monetary lifecycle event with zero balance impact and bypasses
+    transaction loading for it; returns `BigDecimal.ZERO` if an account has no monetary events
+  - Derives financial balance effects from ledger entries: `CREDIT` entries increase balance (positive) and
+    `DEBIT` entries decrease balance (negative / `negate()`)
+  - Aggregates multiple matching ledger entries for the same account within a single transaction
+  - Reconstructs historical balances using an inclusive `occurredAt <= asOf` boundary; returns
+    `BigDecimal.ZERO` when no events exist prior to `asOf`
+
+**Batch Loading Strategy (N+1 Query Prevention)**
+
+- Avoids per-event database queries inside the replay iteration loop:
+  - Collects monetary event transaction IDs into a distinct `Set<Long>`
+  - Batch-loads all referenced transactions via `transactionRepository.findAllById(transactionIds)`
+  - Batch-loads all relevant ledger entries via `ledgerEntryRepository.findByTransactionIdIn(transactionIds)`
+  - Groups loaded transactions and ledger entries in memory before executing the sequential replay
+
+**Data Integrity Invariants**
+
+- Fails fast with `IllegalStateException` when historical data exhibits structural corruption:
+  - Monetary event missing an associated transaction
+  - Referenced transaction ID not found in database
+  - Transaction contains no ledger entries
+  - Transaction contains no ledger entry for the subject account
+
+**Repository Enhancements**
+
+- `EventRepository` enhanced with:
+  - `findByAccountIdOrderByOccurredAtAscIdAsc(Long accountId)`
+  - `findByAccountIdAndOccurredAtLessThanEqualOrderByOccurredAtAscIdAsc(Long accountId, OffsetDateTime asOf)`
+- `LedgerEntryRepository` enhanced with batch transaction lookup:
+  - `findByTransactionIdIn(Collection<Long> transactionIds)`
+
+#### Testing & Verification
+
+- `BalanceReconstructionServiceImplTest` — 13 unit tests (`@ExtendWith(MockitoExtension.class)`) covering:
+  - `AccountNotFoundException` when account does not exist
+  - Zero balance returned when valid account has no events
+  - `SYS-CASH` reconstruction rejection throwing `IllegalStateException`
+  - Zero balance returned for `ACCOUNT_CREATED` event
+  - Balance increase for `CREDIT` ledger entry
+  - Balance decrease for `DEBIT` ledger entry
+  - Cumulative balance reconstruction across multiple events
+  - Correct summation of multiple ledger entries for the same account and transaction
+  - Inclusive event inclusion at historical `asOf` boundary
+  - Zero balance for historical query timestamp before monetary events
+  - Integrity failure when monetary event has null transaction
+  - Integrity failure when referenced transaction is missing
+  - Integrity failure when transaction lacks a ledger entry for the account
+- `BalanceReconstructionServiceIntegrationTest` — 5 integration tests (`@SpringBootTest`) covering:
+  - End-to-end current balance reconstruction after deposit against PostgreSQL
+  - Current balance reconstruction after deposit and withdrawal
+  - Balance reconstruction for both source and destination accounts after transfer
+  - Historical balance reconstruction at event timestamp boundary
+  - `SYS-CASH` balance reconstruction rejection against real database instance
+
+#### Verification
+
+`mvn clean test` — **126 tests run, 0 failures, 0 errors, 0 skipped** — BUILD SUCCESS
+
+Spring Boot startup verified against PostgreSQL: Flyway validates migrations V1 through V5; Hibernate validates entity mappings at startup.
+
+#### Architectural Boundary
+
+Phase 6 intentionally does NOT contain:
+
+- REST endpoints or controllers (remains an internal service capability)
+- Request or Response DTOs
+- OpenAPI / Swagger documentation
+- Public API surface
+- Database schema changes or new Flyway migrations
+- Transaction processing modifications
+- Event generation modifications
+- Multi-currency balance calculations
+- Balance caching or materialized snapshots
+
+#### New ADRs Recorded
+
+- ADR-027: Internal Balance Reconstruction Engine and Deterministic History Replay
+
 Next Milestone
 
-Phase 6 — Balance Reconstruction
+Phase 7 — Audit Module

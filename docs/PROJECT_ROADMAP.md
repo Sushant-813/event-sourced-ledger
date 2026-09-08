@@ -213,7 +213,7 @@ concurrent double-spending.
 
 # Phase 6 — Balance Reconstruction
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-08**
 
 ## Objective
 
@@ -230,9 +230,13 @@ Derive account balances from financial history.
 
 Balances can always be reconstructed from stored history.
 
+`mvn clean test` — **126 tests, 0 failures, BUILD SUCCESS**
+
 ---
 
 # Phase 7 — Audit Module
+
+**Status: NEXT**
 
 ## Objective
 

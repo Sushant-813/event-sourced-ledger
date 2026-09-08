@@ -1451,6 +1451,123 @@ Negative
 
 ---
 
+# ADR-027
+
+## Title
+
+Internal Balance Reconstruction Engine and Deterministic History Replay
+
+### Status
+
+Accepted
+
+### Context
+
+Unlike traditional CRUD systems that store and overwrite account balances directly in a mutable column,
+this project models financial history as an immutable stream of events and double-entry ledger entries (ADR-004).
+Balances are always derived from history rather than stored as authoritative state.
+
+Phase 4 and Phase 5 introduced monetary transactions (deposits, withdrawals, transfers) that atomically persist
+events and double-entry ledger records. However, computing an account's balance—either at the present moment or
+at an arbitrary historical point in time—requires a dedicated reconstruction engine capable of replaying this
+immutable history.
+
+Implementing balance reconstruction requires addressing several architectural requirements:
+
+1. **Replay Determinism**: Replaying an account's events must produce identical, reproducible results across
+   multiple runs. Events occurring at the exact same millisecond must have a stable tie-breaker sequence.
+2. **Performance & N+1 Prevention**: Loading events, transactions, and ledger entries individually on a per-event
+   basis during replay would cause severe database query amplification (N+1 queries), which degrades as event
+   history grows.
+3. **Accounting Semantics**: The engine must distinguish non-monetary lifecycle events (such as `ACCOUNT_CREATED`)
+   from monetary transactions, and derive exact balance effects from double-entry ledger entries where CREDIT
+   increases balance and DEBIT decreases balance.
+4. **Historical Point-in-Time Support**: Callers must be able to evaluate an account balance as of an arbitrary
+   timestamp (`asOf`) with clear, inclusive boundary semantics.
+5. **Structural Integrity**: If historical event and ledger relationships are broken (e.g. missing transactions,
+   absent ledger legs), the engine must fail fast to prevent returning corrupted balance figures.
+6. **System Account Isolation**: The system contra-account `SYS-CASH` does not possess customer balance semantics
+   and must be protected from external balance reconstruction.
+7. **Scope Control**: In Phase 6, balance reconstruction serves as an internal domain/service capability for
+   future modules (such as the Phase 7 Audit Module) and does not introduce public REST APIs or schema migrations.
+
+### Decision
+
+Implement an internal Balance Reconstruction Engine encapsulated in `BalanceReconstructionService` and
+`BalanceReconstructionServiceImpl` under `com.ledger.balance.service`:
+
+1. **Internal Service Contract**: Expose `reconstructCurrentBalance(Long accountId)` and
+   `reconstructBalanceAt(Long accountId, OffsetDateTime asOf)`, both returning `BigDecimal` within a read-only
+   transactional boundary (`@Transactional(readOnly = true)`).
+2. **Account Validation & SYS-CASH Rejection**: Validate account existence using `AccountRepository.findById(accountId)`,
+   throwing `AccountNotFoundException` if missing. Reject balance reconstruction for the `SYS-CASH` system account
+   by throwing `IllegalStateException("Balance reconstruction is not supported for the SYS-CASH account")`.
+3. **Deterministic Event Replay Ordering**: Load events using repository ordering `occurredAt ASC, id ASC`
+   (`findByAccountIdOrderByOccurredAtAscIdAsc` and `findByAccountIdAndOccurredAtLessThanEqualOrderByOccurredAtAscIdAsc`),
+   enforcing deterministic replay ordering per ADR-020.
+4. **Lifecycle Event Isolation**: Treat `ACCOUNT_CREATED` as a non-monetary lifecycle event with zero balance effect
+   and bypass transaction/ledger lookup for it. Return `BigDecimal.ZERO` if an account has no monetary events.
+5. **Batch Loading (O(1) Queries)**: Collect all monetary transaction IDs from the replayed events, batch-load
+   all referenced transactions via `transactionRepository.findAllById(transactionIds)`, and batch-load all matching
+   ledger entries via `ledgerEntryRepository.findByTransactionIdIn(transactionIds)`. Group records in memory before
+   executing replay, eliminating database queries inside the iteration loop.
+6. **Ledger-Derived Balance Calculation**: Derive balance changes from the target account's matching ledger entries:
+   CREDIT entries increase balance (positive) and DEBIT entries decrease balance (`negate()`). Multiple entries for
+   the same account within a single transaction are summed.
+7. **Inclusive Historical Boundary**: For historical balance reconstruction, filter events where `occurredAt <= asOf`
+   using the repository's `LessThanEqual` query. If no events exist prior to `asOf`, return `BigDecimal.ZERO`.
+8. **Fail-Fast Structural Integrity Checks**: Throw `IllegalStateException` when data integrity invariants are violated:
+   - A monetary event has no associated transaction
+   - A referenced transaction ID is missing from the database
+   - A transaction has no ledger entries
+   - A transaction has no ledger entry for the reconstructed account
+9. **Architectural Scope Boundary**: Keep Phase 6 strictly an internal service capability. Do not introduce REST
+   controllers, request/response DTOs, OpenAPI annotations, public API routes, or database schema migrations.
+
+### Alternatives Considered
+
+- **Maintain a mutable `balance` column on `accounts`:** Rejected because it violates ADR-004. Mutable balance columns
+  introduce synchronization drift, concurrency race conditions, and disconnect state from immutable audit records.
+- **Calculate balances purely via database `SUM()` aggregation:** Rejected as the primary reconstruction mechanism
+  because it bypasses the event stream. Event-driven reconstruction guarantees that events explain ledger state,
+  validating the event store for future event replay and audit timelines in Phase 7.
+- **Per-event lazy database queries inside the replay loop:** Rejected because it issues individual SQL queries
+  for every event, creating an N+1 query bottleneck that scales poorly as account transaction volume grows.
+- **Expose a public REST balance endpoint in Phase 6:** Rejected because Phase 6 is planned strictly as an
+  internal balance reconstruction capability. Public API exposure and query features belong to subsequent audit
+  and API refinement milestones (Phase 7 and Phase 8).
+
+### Rationale
+
+Reconstructing balances by replaying ordered event streams and verifying corresponding ledger entries honors the
+fundamental event sourcing promise: the audit log of business events is the source of truth.
+
+Batch-loading transactions and ledger entries across all collected transaction IDs in bulk queries combines event
+replay purity with relational query efficiency, keeping database round-trips constant regardless of the number of
+events replayed.
+
+Failing fast on missing ledger legs or broken references ensures that any data corruption is detected immediately
+rather than silently masked as an incorrect balance.
+
+### Consequences
+
+Positive
+
+- Accounts have mathematically derived balances computed directly from immutable historical records
+- Historical point-in-time balances can be computed deterministically for any timestamp
+- Event replay ordering is stable and reproducible across queries
+- Batch fetching eliminates N+1 query performance penalties during reconstruction
+- Strict integrity checks prevent silent calculation errors if historical records are damaged
+- Keeps Phase 6 scope clean, self-contained, and decoupled from presentation concerns
+
+Negative
+
+- Balance reconstruction requires reading historical events and ledger entries into memory, which scales with event
+  history volume (future snapshotting may be considered in later phases)
+- Replaying events requires strict relational consistency between events, transactions, and ledger entries
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.
