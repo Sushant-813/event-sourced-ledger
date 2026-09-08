@@ -9,9 +9,9 @@ that historical record — never stored as the source of truth. This design prio
 correctness, complete auditability, and the ability to reconstruct any past state from history
 alone.
 
-> **Development is incremental.** Event sourcing, ledger processing, deposits, withdrawals,
-> transfers, and balance reconstruction are later roadmap phases. See the
-> [Development Roadmap](#development-roadmap) below for what is currently complete.
+> **Development is incremental.** The event store, ledger processing, deposits, withdrawals,
+> transfers, and internal balance reconstruction are complete through Phase 6. See the
+> [Development Roadmap](#development-roadmap) for completed and upcoming milestones.
 
 ---
 
@@ -25,8 +25,8 @@ alone.
 | Phase 3 | Event Store | **COMPLETED** (2026-09-03) |
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** (2026-09-06) |
 | Phase 5 | Transfer Engine | **COMPLETED** (2026-09-07) |
-| Phase 6 | Balance Reconstruction | Pending |
-| Phase 7 | Audit Module | Pending |
+| Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
+| Phase 7 | Audit Module | **NEXT** |
 | Phase 8 | API Refinement | Pending |
 | Phase 9 | Testing & Hardening | Pending |
 | Phase 10 | Backend v1.0 Release | Pending |
@@ -184,6 +184,43 @@ Tests run: 108, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
+### Phase 6 — Balance Reconstruction (completed)
+
+Phase 6 implemented the internal service that derives customer-account balances by replaying
+immutable event history and validating the corresponding double-entry ledger records:
+
+- `BalanceReconstructionService` provides current and point-in-time operations:
+  - `reconstructCurrentBalance(Long accountId)`
+  - `reconstructBalanceAt(Long accountId, OffsetDateTime asOf)`
+- `BalanceReconstructionServiceImpl` executes within a read-only transaction and validates that
+  the account exists; `SYS-CASH` is explicitly excluded because it has no customer-balance
+  semantics.
+- Events are replayed in deterministic `occurredAt ASC, id ASC` order. `ACCOUNT_CREATED` is a
+  non-monetary lifecycle event and has no balance effect.
+- The service derives each effect from ledger entries: `CREDIT` increases a balance and `DEBIT`
+  decreases it. Multiple matching entries for the same account and transaction are summed.
+- Historical reconstruction includes events at the requested timestamp (`occurredAt <= asOf`)
+  and returns zero when no monetary events precede it.
+- Transactions and ledger entries are batch-loaded before replay, avoiding queries inside the
+  per-event loop.
+- Structural inconsistencies fail fast rather than returning a potentially incorrect balance:
+  missing event transactions, missing referenced transactions, missing ledger entries, or no
+  entry for the reconstructed account.
+- No controller, DTO, public endpoint, schema migration, snapshot, or cache was added; balance
+  reconstruction remains an internal capability for the Phase 7 Audit Module.
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 126, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+See [ADR-027](docs/DECISIONS.md) and the [Phase 6 project-log entry](docs/PROJECT_LOG.md) for
+the implementation rationale and full verification record.
+
+---
+
 ## Architecture
 
 ```
@@ -194,6 +231,7 @@ Application   →  AccountService / AccountServiceImpl
                →  TransactionService / TransactionServiceImpl
                →  LedgerService / LedgerServiceImpl
                →  EventService / EventServiceImpl
+               →  BalanceReconstructionService / BalanceReconstructionServiceImpl
 Domain        →  Account, Transaction, LedgerEntry, Event entities, enums, DTOs, exceptions
 Persistence   →  AccountRepository, TransactionRepository, LedgerEntryRepository, EventRepository
 Database      →  PostgreSQL (schema managed by Flyway)
@@ -204,9 +242,10 @@ Database      →  PostgreSQL (schema managed by Flyway)
 - **Entities are never exposed directly** through the REST layer; all responses use DTOs.
 - **Constructor injection** is used throughout.
 
-The long-term design is event-sourced: financial history is immutable and authoritative, with
-current state derived by replaying that history. The Event Store infrastructure was introduced
-in Phase 3. Balance reconstruction is planned for Phase 6.
+Financial history is immutable and authoritative. Phase 6 completes the first event-replay
+capability: customer balances can be deterministically reconstructed from ordered events and
+their corresponding ledger entries, without a mutable balance column. This remains an internal
+service; a public audit/query surface is planned for Phase 7.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural specification.
 
@@ -253,6 +292,12 @@ All responses conform to the standard `ApiError` error structure on failure.
 | `POST` | `/accounts/{accountId}/withdrawal` | Withdraw funds from a customer account (returns 201) |
 | `POST` | `/transfers` | Transfer funds between customer accounts (returns 201) |
 
+### Balance Reconstruction (Phase 6)
+
+Balance reconstruction is currently an internal service capability and intentionally adds no
+REST endpoint, request/response DTO, or OpenAPI operation. Public audit and history APIs are
+deferred to Phase 7.
+
 Interactive API documentation is available at `/swagger-ui.html` when the application is
 running.
 
@@ -275,6 +320,8 @@ running.
   supporting deterministic chronological event retrieval.
 - **Phase 4 migration:** `V5__Seed_System_Account.sql` — seeds the internal `SYS-CASH`
   system contra-account. No DDL changes; `ddl-auto=validate` compatibility preserved.
+- **Phase 6:** no schema migration was required. The reconstruction service replays the existing
+  event, transaction, and ledger-entry records.
 - `spring.jpa.hibernate.ddl-auto=validate` — Hibernate validates `Account`, `Transaction`,
   `LedgerEntry`, and `Event` entity mappings against the live schema on every startup.
 - Current Flyway schema version: **5**.
@@ -333,7 +380,7 @@ mvn clean test
 
 ## Testing
 
-Phase 1 through Phase 5 combined test suite (`mvn clean test`):
+Phase 1 through Phase 6 combined test suite (`mvn clean test`):
 
 | Test class | Type | Tests |
 |---|---|---|
@@ -345,14 +392,16 @@ Phase 1 through Phase 5 combined test suite (`mvn clean test`):
 | `TransactionControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
 | `TransferControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
 | `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 9 |
+| `BalanceReconstructionServiceImplTest` | Unit (Mockito, no DB) | 13 |
+| `BalanceReconstructionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 5 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
-| **Total** | | **108** |
+| **Total** | | **126** |
 
 **Verified result:**
 
 ```
 mvn clean test
-Tests run: 108, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 126, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -361,13 +410,12 @@ Tests run: 108, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ```
 event-sourced-ledger/
-├── ai/
-│   └── AI_DEVELOPMENT_ENVIRONMENT.md   # AI-assisted development configuration
 ├── backend/
 │   ├── pom.xml                          # Maven project descriptor
 │   └── src/
 │       ├── main/
-│       │   ├── java/com/ledger/         # Application source
+│       │   ├── java/com/ledger/         # Application source (account, balance, event,
+│       │   │                             # ledger, and transaction modules)
 │       │   └── resources/
 │       │       ├── application.properties
 │       │       ├── logback-spring.xml
@@ -375,6 +423,7 @@ event-sourced-ledger/
 │       └── test/
 │           └── java/com/ledger/         # Test source
 ├── docs/                                # Project documentation
+│   └── ai/AI_DEVELOPMENT_ENVIRONMENT.md # AI-assisted development configuration
 ├── .gitignore
 └── README.md                            # This file
 ```
@@ -392,7 +441,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-026) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-027) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -407,8 +456,8 @@ event-sourced-ledger/
 | Phase 3 | Event Store | **COMPLETED** |
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** |
 | Phase 5 | Transfer Engine | **COMPLETED** |
-| Phase 6 | Balance Reconstruction | **NEXT** |
-| Phase 7 | Audit Module | Pending |
+| Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
+| Phase 7 | Audit Module | **NEXT** |
 | Phase 8 | API Refinement | Pending |
 | Phase 9 | Testing & Hardening | Pending |
 | Phase 10 | Backend v1.0 Release | Pending |
@@ -463,4 +512,4 @@ This project follows:
 
 This project uses an AI-assisted development workflow. The configuration and guidelines for AI
 agents operating within this repository are documented in
-[ai/AI_DEVELOPMENT_ENVIRONMENT.md](ai/AI_DEVELOPMENT_ENVIRONMENT.md).
+[docs/ai/AI_DEVELOPMENT_ENVIRONMENT.md](docs/ai/AI_DEVELOPMENT_ENVIRONMENT.md).
