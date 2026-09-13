@@ -27,6 +27,7 @@ import com.ledger.transaction.exception.AccountNotEligibleForTransactionExceptio
 import com.ledger.transaction.exception.InsufficientFundsException;
 import com.ledger.transaction.exception.InvalidTransferException;
 import java.util.stream.Collectors;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Centralised exception handler for all REST error responses.
@@ -415,6 +416,40 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 return ResponseEntity
                                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
                                 .body(body);
+        }
+        // -------------------------------------------------------------------------
+        // 400 — Invalid query parameter or path variable type
+        // -------------------------------------------------------------------------
+
+        /**
+         * Handles request parameters or path variables that cannot be converted
+         * to their expected Java type.
+         *
+         * For example, an invalid ISO-8601 value supplied for the "asOf"
+         * OffsetDateTime query parameter.
+         */
+        @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+        public ResponseEntity<ApiError> handleMethodArgumentTypeMismatch(
+                        MethodArgumentTypeMismatchException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                String message = "Invalid value for parameter '"
+                                + ex.getName() + "'";
+
+                log.warn(
+                                "400 Invalid parameter type on {}: {}",
+                                path,
+                                ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.BAD_REQUEST.value(),
+                                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                                message,
+                                path);
+
+                return ResponseEntity.badRequest().body(body);
         }
 
         // -------------------------------------------------------------------------

@@ -589,6 +589,204 @@ Transfers funds between two distinct ACTIVE customer accounts.
 
 ---
 
+## Audit Endpoints (Phase 7)
+
+### Get Account Event History
+
+```http
+GET /accounts/{accountId}/audit/events
+```
+
+Returns the chronological event history for an account ordered by `occurred_at ASC, id ASC`.
+
+**Response (`200 OK`):**
+
+```json
+[
+  {
+    "eventId": 10,
+    "eventType": "ACCOUNT_CREATED",
+    "transactionId": null,
+    "payload": null,
+    "occurredAt": "2026-09-10T09:00:00Z"
+  },
+  {
+    "eventId": 20,
+    "eventType": "DEPOSIT",
+    "transactionId": 100,
+    "payload": null,
+    "occurredAt": "2026-09-10T10:00:00Z"
+  }
+]
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `accountId` is non-positive or non-numeric (`ConstraintViolationException`) |
+| 404 | Account not found or resolves to `SYS-CASH` (`AccountNotFoundException`) |
+
+---
+
+### Get Account Transaction History
+
+```http
+GET /accounts/{accountId}/audit/transactions
+```
+
+Returns all financial transactions in which the account participated, ordered by the first
+occurrence of the transaction in the account's monetary event timeline.
+
+**Response (`200 OK`):**
+
+```json
+[
+  {
+    "transactionId": 100,
+    "referenceNumber": "TXN-001",
+    "transactionType": "DEPOSIT",
+    "status": "COMPLETED",
+    "createdAt": "2026-09-10T10:00:00Z"
+  }
+]
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `accountId` is non-positive or non-numeric |
+| 404 | Account not found or resolves to `SYS-CASH` |
+
+---
+
+### Get Account Ledger History
+
+```http
+GET /accounts/{accountId}/audit/ledger
+```
+
+Returns all double-entry ledger entries affecting the account in chronological order with
+matched transaction reference numbers.
+
+**Response (`200 OK`):**
+
+```json
+[
+  {
+    "ledgerEntryId": 50,
+    "transactionId": 100,
+    "referenceNumber": "TXN-001",
+    "entryType": "CREDIT",
+    "amount": "1000.00",
+    "createdAt": "2026-09-10T10:00:00Z"
+  }
+]
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `accountId` is non-positive or non-numeric |
+| 404 | Account not found or resolves to `SYS-CASH` |
+
+---
+
+### Get Reconstructed Account Balance
+
+```http
+GET /accounts/{accountId}/audit/balance
+GET /accounts/{accountId}/audit/balance?asOf=2026-09-10T12:00:00Z
+```
+
+Returns the reconstructed balance of the account derived from its historical records. When `asOf`
+is omitted, returns the current reconstructed balance and `asOf = null`. When `asOf` is provided,
+reconstructs the balance inclusive of all events where `occurredAt <= asOf`.
+
+**Response (`200 OK`):**
+
+```json
+{
+  "accountId": 1,
+  "balance": "1500.00",
+  "asOf": "2026-09-10T12:00:00Z"
+}
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `accountId` is non-positive or non-numeric |
+| 400 | `asOf` query parameter is malformed / invalid ISO-8601 string |
+| 404 | Account not found or resolves to `SYS-CASH` |
+| 500 | Historical data integrity invariant violated |
+
+---
+
+### Get Account Audit Trail
+
+```http
+GET /accounts/{accountId}/audit/trail
+GET /accounts/{accountId}/audit/trail?asOf=2026-09-10T12:00:00Z
+```
+
+Returns an event-by-event explanation of how the balance evolved. Each monetary event derives its
+signed balance effect from the account's ledger entries. Lifecycle events (`ACCOUNT_CREATED`)
+have `balanceChange = 0.00` and preserve running balance.
+
+**Response (`200 OK`):**
+
+```json
+{
+  "accountId": 1,
+  "finalBalance": "750.00",
+  "asOf": null,
+  "items": [
+    {
+      "eventId": 10,
+      "eventType": "ACCOUNT_CREATED",
+      "transactionId": null,
+      "referenceNumber": null,
+      "balanceChange": "0.00",
+      "runningBalance": "0.00",
+      "occurredAt": "2026-09-10T08:00:00Z"
+    },
+    {
+      "eventId": 20,
+      "eventType": "DEPOSIT",
+      "transactionId": 100,
+      "referenceNumber": "TXN-001",
+      "balanceChange": "1000.00",
+      "runningBalance": "1000.00",
+      "occurredAt": "2026-09-10T09:00:00Z"
+    },
+    {
+      "eventId": 30,
+      "eventType": "WITHDRAWAL",
+      "transactionId": 200,
+      "referenceNumber": "TXN-002",
+      "balanceChange": "-250.00",
+      "runningBalance": "750.00",
+      "occurredAt": "2026-09-10T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Errors:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `accountId` is non-positive or non-numeric |
+| 400 | `asOf` query parameter is malformed / invalid ISO-8601 string |
+| 404 | Account not found or resolves to `SYS-CASH` |
+| 500 | Historical data integrity invariant violated |
+
+---
+
 ## SYS-CASH System Account
 
 `SYS-CASH` is an internal system contra-account used for double-entry accounting in
@@ -596,7 +794,7 @@ single-account deposit and withdrawal operations. It is not a customer account a
 not exposed through any public API:
 
 - It does not appear in `GET /accounts` paginated results.
-- All public account lookup, status mutation, deposit, withdrawal, and transfer
+- All public account lookup, status mutation, deposit, withdrawal, transfer, and audit
   operations return 404 when any target account resolves to `SYS-CASH`.
 - Customer-to-customer transfers operate directly between customer accounts and do
   not involve `SYS-CASH`.

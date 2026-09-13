@@ -826,6 +826,128 @@ Phase 6 intentionally does NOT contain:
 
 - ADR-027: Internal Balance Reconstruction Engine and Deterministic History Replay
 
+---
+
+## 2026-09-13
+
+### Phase 7 — Audit Module: COMPLETED
+
+The Audit Module has been implemented and verified. The module delivers complete financial
+traceability, enabling customers and auditors to inspect account event history, transaction
+history, ledger entries, reconstructed current/historical balances, and an event-by-event audit
+trail explaining balance evolution.
+
+#### What Was Implemented
+
+**REST API Layer (`com.ledger.audit.controller`)**
+
+- `AuditController` mapped to `/accounts/{accountId}/audit` exposing five read-only endpoints:
+  - `GET /accounts/{accountId}/audit/events` — returns chronological event history for an account
+  - `GET /accounts/{accountId}/audit/transactions` — returns all financial transactions involving the account
+  - `GET /accounts/{accountId}/audit/ledger` — returns all ledger entries affecting the account
+  - `GET /accounts/{accountId}/audit/balance` — returns current balance or historical balance at `asOf` timestamp
+  - `GET /accounts/{accountId}/audit/trail` — returns event-by-event audit trail with running balance accumulation
+- Path validation via Jakarta Validation (`@Positive(message = "accountId must be greater than 0")`)
+- Query parameter validation for optional ISO-8601 `asOf` timestamp (`@DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)`)
+- Comprehensive OpenAPI 3 / Swagger annotations (`@Operation`, `@ApiResponses`, `@Parameter`) on all endpoints
+
+**Audit Service Layer (`com.ledger.audit.service`)**
+
+- `AuditService` interface and `AuditServiceImpl` implementing all audit capabilities
+- **Event History:** Queries events by account ID ordered deterministically by `occurred_at ASC, id ASC`
+- **Transaction History:** Collects distinct transaction IDs from monetary events preserving their first
+  occurrence order, batch-loads transactions via `transactionRepository.findAllById`, and reconstructs
+  the response in event-derived chronological sequence
+- **Ledger History:** Retrieves ledger entries affecting the account, batch-loads referenced transactions
+  for reference numbers, and returns entries in order
+- **Balance Reconstruction:** Reuses `BalanceReconstructionService`:
+  - Without `asOf`: calls `reconstructCurrentBalance(accountId)` and returns `asOf = null`
+  - With `asOf`: calls `reconstructBalanceAt(accountId, asOf)` and returns requested timestamp
+- **Audit Trail Engine:**
+  - Loads ordered events (optionally bounded by `occurred_at <= asOf`)
+  - Batch-loads transactions and ledger entries in bulk ($O(1)$ queries relative to event count)
+  - For `ACCOUNT_CREATED`: records `balanceChange = BigDecimal.ZERO`, preserves `runningBalance = 0.00`
+  - For monetary events: computes signed financial effect from the account's ledger entries
+    (`CREDIT` adds positive amount, `DEBIT` subtracts amount / `negate()`)
+  - Handles multiple ledger entries for the same account within a single transaction by summation
+  - Accumulates running balance forward sequentially
+  - Fails fast with `IllegalStateException` on structural data corruption (missing transaction, missing
+    ledger entries, missing account leg)
+
+**Public API Boundary & SYS-CASH Isolation**
+
+- Private `validatePublicAccount(Long accountId)` helper enforced across all audit methods:
+  - Account not found in `AccountRepository` → throws `AccountNotFoundException` (404)
+  - Account matches `SYS-CASH` (`SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER`) → throws `AccountNotFoundException` (404)
+- Guarantees uniform 404 behavior across all five public endpoints and protects against internal 500
+  leaks from lower-layer services
+
+**DTO Records (`com.ledger.audit.dto`)**
+
+- Six Java 21 records implementing immutable audit contracts:
+  - `AccountEventResponse(Long eventId, EventType eventType, Long transactionId, String payload, OffsetDateTime occurredAt)`
+  - `AccountTransactionResponse(Long transactionId, String referenceNumber, TransactionType transactionType, TransactionStatus status, OffsetDateTime createdAt)`
+  - `AccountLedgerEntryResponse(Long ledgerEntryId, Long transactionId, String referenceNumber, EntryType entryType, BigDecimal amount, OffsetDateTime createdAt)`
+  - `AuditBalanceResponse(Long accountId, BigDecimal balance, OffsetDateTime asOf)`
+  - `AuditTrailItemResponse(Long eventId, EventType eventType, Long transactionId, String referenceNumber, BigDecimal balanceChange, BigDecimal runningBalance, OffsetDateTime occurredAt)`
+  - `AuditTrailResponse(Long accountId, BigDecimal finalBalance, OffsetDateTime asOf, List<AuditTrailItemResponse> items)`
+
+**Error Handling & Validation (`com.ledger.common.exception`)**
+
+- Extended `GlobalExceptionHandler` with `@ExceptionHandler(MethodArgumentTypeMismatchException.class)`
+  returning `400 Bad Request` with standard `ApiError` JSON when parameters (such as `asOf`) fail type conversion
+
+**Persistence Enhancements (`com.ledger.ledger.repository`)**
+
+- Added `findByAccountIdOrderByCreatedAtAscIdAsc(Long accountId)` to `LedgerEntryRepository`
+
+#### Testing & Verification
+
+- `AuditServiceImplTest` — 17 unit tests (`@ExtendWith(MockitoExtension.class)`) covering:
+  - Event history retrieval for public account
+  - `AccountNotFoundException` on missing account and `SYS-CASH` for event history
+  - Transaction history in event order with deduplication
+  - Empty transaction history when no monetary events exist
+  - Ledger history in deterministic order (`createdAt ASC, id ASC`) with matched transaction reference numbers
+  - Empty ledger history when account has no entries
+  - Current balance (`asOf = null`) and historical balance (`asOf` provided)
+  - Audit trail running balance calculation for deposit and withdrawal sequence
+  - Audit trail with historical `asOf` filter
+  - Integrity failures: monetary event with null transaction, missing transaction in batch,
+    missing ledger entries, missing account entry in transaction
+  - Empty audit trail for account with no events
+- `AuditControllerTest` — 10 web-tier tests (`MockMvc` standalone setup with `GlobalExceptionHandler`) covering:
+  - `GET /events` returning 200 with JSON array
+  - `GET /transactions` returning 200 with JSON array
+  - `GET /ledger` returning 200 with JSON array
+  - `GET /balance` returning 200 for current and historical queries
+  - `GET /trail` returning 200 for current and historical queries with structured audit items and running balances
+  - 404 response with `ApiError` when account not found on `/events`
+  - 400 response with `ApiError` when `asOf` query parameter is malformed on `/balance` and `/trail`
+
+#### Verification Result
+
+```
+mvn clean test
+Tests run: 153, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+Full suite passing: 126 existing tests + 27 new audit tests = **153 total tests**.
+
+#### Architectural Boundary
+
+Phase 7 intentionally does NOT contain:
+
+- Mutation endpoints (audit module is strictly read-only)
+- Pagination, sorting, or custom filter parameters (deferred to Phase 8)
+- Database schema changes or new Flyway migrations (zero DDL required)
+- Materialized views, caching, snapshotting, or CQRS projections
+- Multi-currency audit support
+
+#### New ADRs Recorded
+
+- ADR-028: Account Audit Module, Historical Replay APIs, and Financial Traceability
+
 Next Milestone
 
-Phase 7 — Audit Module
+Phase 8 — API Refinement

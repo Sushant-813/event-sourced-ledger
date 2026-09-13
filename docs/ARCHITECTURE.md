@@ -704,7 +704,107 @@ See ADR-026 for the full architectural rationale.
 
 ---
 
-# 17. Future Architecture Evolution
+# 17. Phase 7 — Audit Module & Financial Traceability Architecture
+
+Phase 7 introduces the public audit and financial traceability layer. Built strictly as a read-only
+query surface over the immutable records established in Phases 1–6, the Audit Module fulfills the
+project's guiding philosophy: every balance must be explainable from historical events.
+
+```
+Client Request
+      │
+      ▼
+Presentation Layer: AuditController (/accounts/{accountId}/audit/*)
+ - Validates @Positive accountId path variable
+ - Parses optional ISO-8601 OffsetDateTime asOf query parameter
+ - Returns standard DTO records; delegates all logic to AuditService
+      │
+      ▼
+Application Layer: AuditServiceImpl
+ - Step 1: validatePublicAccount(accountId)
+     • Checks account existence in AccountRepository (throws 404 if absent)
+     • Rejects SYS-CASH system account (throws 404 to preserve public boundary)
+ - Step 2: Query Execution & Batch Loading (O(1) queries relative to history)
+     • Queries events via EventRepository (occurred_at ASC, id ASC)
+     • Batch-loads transactions via TransactionRepository.findAllById
+     • Batch-loads ledger entries via LedgerEntryRepository.findByTransactionIdIn
+     • Queries ledger entries via LedgerEntryRepository.findByAccountId
+ - Step 3: Reconstruction & Transformation
+     • Delegates balance calculation to BalanceReconstructionService
+     • Orders transactions by event first-occurrence sequence
+     • Calculates signed financial effects from ledger entries (CREDIT - DEBIT)
+     • Computes sequential running balances for the audit trail
+      │
+      ▼
+Persistence Layer & Repositories
+ - AccountRepository, EventRepository, TransactionRepository, LedgerEntryRepository
+ - BalanceReconstructionService
+      │
+      ▼
+Response DTO Records (200 OK)
+ - AccountEventResponse, AccountTransactionResponse, AccountLedgerEntryResponse
+ - AuditBalanceResponse, AuditTrailResponse
+```
+
+## Core Architectural Decisions
+
+### 1. Separation of Event Chronology and Ledger Financial Effect
+
+The audit trail unites two distinct dimensions of the system:
+- **Events** describe *what happened and when* (business event metadata, timestamps).
+- **Ledger Entries** describe the *exact financial effect* (monetary amounts, entry types).
+
+The monetary effect of an event is **never inferred from its `EventType`**. Instead, for each
+monetary event, the service locates the account's matching ledger entries in the associated
+transaction and derives the signed balance change:
+$$\text{balanceChange} = \sum \text{CREDIT amounts for account} - \sum \text{DEBIT amounts for account}$$
+
+Multiple ledger entries for the same account within a single transaction are summed.
+
+### 2. Lifecycle Event Representation
+
+Non-monetary lifecycle events (`ACCOUNT_CREATED`) do not move funds. In the audit trail:
+- `balanceChange = BigDecimal.ZERO`
+- `runningBalance = previousRunningBalance` (initiates at `0.00` for initial account creation)
+- `transactionId = null` and `referenceNumber = null`
+
+This guarantees a consistent numeric structure for API consumers without requiring null-checking.
+
+### 3. Event-Derived Transaction History Ordering
+
+The `Transaction` entity does not contain an account foreign key; the association is indirect
+through events and ledger entries. Sorting transactions merely by `Transaction.createdAt` could
+misalign with the account's actual event timeline.
+
+Therefore, transaction history ordering is derived from the account's monetary event sequence:
+1. Events are retrieved ordered by `occurred_at ASC, id ASC`.
+2. Distinct transaction IDs are collected preserving their first occurrence order.
+3. Transactions are batch-loaded via `transactionRepository.findAllById(transactionIds)`.
+4. The response list is reconstructed in the exact order of first occurrence.
+
+### 4. Public Account Boundary & SYS-CASH Invariance
+
+All public audit endpoints enforce a strict account boundary through `validatePublicAccount(Long accountId)`:
+- Non-existent account IDs throw `AccountNotFoundException` (404).
+- Lookups resolving to `SYS-CASH` throw `AccountNotFoundException` (404).
+
+This boundary check occurs at the service entry point before executing queries or delegating to
+`BalanceReconstructionService`, ensuring consistent 404 responses and shielding callers from internal
+`IllegalStateException` exceptions.
+
+### 5. Constant-Query Batch Loading (O(1) Queries)
+
+All audit endpoints execute in a constant number of database queries regardless of historical record
+count. No database queries occur inside per-record iteration loops:
+- **Event History:** 2 queries (account validation + event lookup)
+- **Transaction History:** 3 queries (account validation + event lookup + batch transaction lookup)
+- **Ledger History:** 3 queries (account validation + ledger lookup + batch transaction lookup)
+- **Balance Query:** 2 queries (account validation + `BalanceReconstructionService`)
+- **Audit Trail:** 4 queries (account validation + event lookup + batch transaction lookup + batch ledger lookup)
+
+---
+
+# 18. Future Architecture Evolution
 
 The current architecture intentionally focuses on a single-service implementation.
 
@@ -725,9 +825,9 @@ These enhancements should extend the existing architecture rather than replace i
 
 ---
 
-# 18. Guiding Philosophy
+# 19. Guiding Philosophy
 
-> **"Financial systems should preserve history, not overwrite it."**
+> **\"Financial systems should preserve history, not overwrite it.\"**
 
 The architecture is designed around immutable financial events instead of mutable balances.
 

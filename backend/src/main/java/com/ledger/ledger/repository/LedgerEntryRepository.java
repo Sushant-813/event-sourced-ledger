@@ -15,6 +15,8 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, Long> 
 
     List<LedgerEntry> findByAccountId(Long accountId);
 
+    List<LedgerEntry> findByAccountIdOrderByCreatedAtAscIdAsc(Long accountId);
+
     List<LedgerEntry> findByTransactionIdIn(Collection<Long> transactionIds);
 
     @Query("""

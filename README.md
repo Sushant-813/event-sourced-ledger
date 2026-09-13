@@ -26,8 +26,8 @@ alone.
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** (2026-09-06) |
 | Phase 5 | Transfer Engine | **COMPLETED** (2026-09-07) |
 | Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
-| Phase 7 | Audit Module | **NEXT** |
-| Phase 8 | API Refinement | Pending |
+| Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
+| Phase 8 | API Refinement | **NEXT** |
 | Phase 9 | Testing & Hardening | Pending |
 | Phase 10 | Backend v1.0 Release | Pending |
 
@@ -221,17 +221,50 @@ the implementation rationale and full verification record.
 
 ---
 
+### Phase 7 — Audit Module (completed)
+
+Phase 7 delivered complete financial traceability through public read-only audit APIs:
+
+- `AuditController` mapped to `/accounts/{accountId}/audit/*` exposing five endpoints:
+  - `GET /events` — chronological account event timeline (`occurred_at ASC, id ASC`)
+  - `GET /transactions` — financial transactions involving the account (ordered by event timeline occurrence)
+  - `GET /ledger` — double-entry ledger entries affecting the account with transaction reference numbers
+  - `GET /balance` — reconstructed current balance or historical point-in-time balance (`asOf` parameter)
+  - `GET /trail` — event-by-event audit trail showing signed financial effect and cumulative running balance
+- Financial effects are derived directly from underlying double-entry ledger entries (`CREDIT` increases,
+  `DEBIT` decreases), never inferred solely from `EventType`
+- Lifecycle events (`ACCOUNT_CREATED`) record `balanceChange = 0.00` and preserve running balance
+- `SYS-CASH` system account is strictly isolated from all audit endpoints; queries return 404
+- Constant $O(1)$ query complexity relative to history length via bulk batch loading
+- Jakarta Validation on path variables (`@Positive`) and centralized error handling for malformed `asOf` timestamps
+- Zero database migrations required; strictly read-only query surface
+- 17 service unit tests + 10 controller MockMvc tests (27 new tests; 153 total)
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 153, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+See [ADR-028](docs/DECISIONS.md) and the [Phase 7 project-log entry](docs/PROJECT_LOG.md) for
+the implementation rationale and full verification record.
+
+---
+
 ## Architecture
 
 ```
 Presentation  →  AccountController
                →  TransactionController
                →  TransferController
+               →  AuditController
 Application   →  AccountService / AccountServiceImpl
                →  TransactionService / TransactionServiceImpl
                →  LedgerService / LedgerServiceImpl
                →  EventService / EventServiceImpl
                →  BalanceReconstructionService / BalanceReconstructionServiceImpl
+               →  AuditService / AuditServiceImpl
 Domain        →  Account, Transaction, LedgerEntry, Event entities, enums, DTOs, exceptions
 Persistence   →  AccountRepository, TransactionRepository, LedgerEntryRepository, EventRepository
 Database      →  PostgreSQL (schema managed by Flyway)
@@ -242,10 +275,9 @@ Database      →  PostgreSQL (schema managed by Flyway)
 - **Entities are never exposed directly** through the REST layer; all responses use DTOs.
 - **Constructor injection** is used throughout.
 
-Financial history is immutable and authoritative. Phase 6 completes the first event-replay
-capability: customer balances can be deterministically reconstructed from ordered events and
-their corresponding ledger entries, without a mutable balance column. This remains an internal
-service; a public audit/query surface is planned for Phase 7.
+Financial history is immutable and authoritative. Balances are derived from ordered events and
+their corresponding ledger entries, without a mutable balance column. The Phase 7 Audit Module
+exposes complete historical traceability and event-by-event balance explanations to clients.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural specification.
 
@@ -292,11 +324,15 @@ All responses conform to the standard `ApiError` error structure on failure.
 | `POST` | `/accounts/{accountId}/withdrawal` | Withdraw funds from a customer account (returns 201) |
 | `POST` | `/transfers` | Transfer funds between customer accounts (returns 201) |
 
-### Balance Reconstruction (Phase 6)
+### Audit Endpoints (Phase 7)
 
-Balance reconstruction is currently an internal service capability and intentionally adds no
-REST endpoint, request/response DTO, or OpenAPI operation. Public audit and history APIs are
-deferred to Phase 7.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/accounts/{accountId}/audit/events` | Chronological event history for an account |
+| `GET` | `/accounts/{accountId}/audit/transactions` | Financial transactions involving the account (event-ordered) |
+| `GET` | `/accounts/{accountId}/audit/ledger` | Ledger entries affecting the account with reference numbers |
+| `GET` | `/accounts/{accountId}/audit/balance` | Reconstructed balance (optional `asOf` ISO-8601 query param) |
+| `GET` | `/accounts/{accountId}/audit/trail` | Event-by-event balance explanation with running balance |
 
 Interactive API documentation is available at `/swagger-ui.html` when the application is
 running.

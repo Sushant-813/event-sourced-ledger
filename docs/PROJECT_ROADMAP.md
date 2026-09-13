@@ -236,7 +236,7 @@ Balances can always be reconstructed from stored history.
 
 # Phase 7 — Audit Module
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-13**
 
 ## Objective
 
@@ -244,19 +244,26 @@ Provide complete financial traceability.
 
 ## Deliverables
 
-- Audit APIs
-- Event timeline
-- Transaction history
-- Ledger history
-- Historical reconstruction
+- Audit REST endpoints (`/accounts/{accountId}/audit/*`)
+- Account event history timeline
+- Account transaction history (event-derived ordering)
+- Account ledger entry history
+- Current and historical balance reconstruction (`asOf` parameter)
+- Account audit trail with per-event financial effect and cumulative running balance
+- Public API boundary enforcement with consistent `SYS-CASH` isolation (404)
+- Constant-query batch loading ($O(1)$ relative to history length)
 
 ## Success Criteria
 
 Every balance can be fully explained through historical events.
 
+`mvn clean test` — **153 tests, 0 failures, BUILD SUCCESS**
+
 ---
 
 # Phase 8 — API Refinement
+
+**Status: NEXT**
 
 ## Objective
 

@@ -1568,6 +1568,144 @@ Negative
 
 ---
 
+# ADR-028
+
+## Title
+
+Account Audit Module, Historical Replay APIs, and Financial Traceability
+
+### Status
+
+Accepted
+
+### Context
+
+The foundational premise of this ledger is that money is history: balances are not stored mutable
+values but are derived from immutable historical events and double-entry ledger records.
+
+Through Phase 6, balance reconstruction existed solely as an internal application service without
+a public REST interface. To fulfill the core vision of financial auditability (PRD Section 4 and
+Roadmap Phase 7), the system must expose public APIs that enable customers and auditors to:
+
+1. Inspect the chronological event timeline of an account.
+2. View all financial transactions in which the account participated.
+3. Review all double-entry ledger entries affecting the account.
+4. Retrieve the reconstructed balance (either current or at an arbitrary historical point in time).
+5. Walk through an event-by-event audit trail explaining how the balance evolved over time.
+
+Several technical and architectural questions arose:
+
+- **Namespace:** Should audit endpoints be a sub-resource of accounts or a top-level audit resource?
+- **Transaction Linkage:** The `Transaction` entity has no direct account foreign key (relationships
+  exist only via `Event` and `LedgerEntry`). How should transactions be retrieved and ordered?
+- **Financial-Effect Source of Truth:** Should the monetary effect of an event be inferred from its
+  `EventType` or calculated from its underlying ledger entries?
+- **Lifecycle Events in Audit Trail:** How should non-monetary lifecycle events such as `ACCOUNT_CREATED`
+  be represented in the audit trail regarding `balanceChange` and `runningBalance`?
+- **System Account Boundary:** How should the internal `SYS-CASH` contra-account be protected across
+  audit endpoints?
+- **Parameter Typing & Validation:** How should optional historical timestamp boundaries (`asOf`) be
+  handled at the HTTP layer?
+
+### Decision
+
+1. **Account-Scoped Audit Namespace:**  
+   Expose all audit capabilities under the account resource namespace:
+   - `GET /accounts/{accountId}/audit/events`
+   - `GET /accounts/{accountId}/audit/transactions`
+   - `GET /accounts/{accountId}/audit/ledger`
+   - `GET /accounts/{accountId}/audit/balance`
+   - `GET /accounts/{accountId}/audit/trail`  
+   This establishes a clear, coherent security and resource boundary scoped to a specific account.
+
+2. **Reuse `BalanceReconstructionService`:**  
+   The audit balance endpoint delegates directly to `BalanceReconstructionService` (`reconstructCurrentBalance`
+   when `asOf == null`, and `reconstructBalanceAt` when `asOf != null`), ensuring that balance derivation
+   logic is never duplicated.
+
+3. **Event-Derived Transaction History Ordering:**  
+   Because transactions do not directly reference accounts, transaction history is derived from the
+   account's monetary events (`occurred_at ASC, id ASC`). Distinct transaction IDs are collected preserving
+   their first occurrence order, batch-loaded via `transactionRepository.findAllById(transactionIds)`,
+   and reconstructed in the event-derived sequence.
+
+4. **Ledger-Driven Financial Effect Calculation:**  
+   Events explain *what* happened and *when*; ledger entries explain the *financial effect*. The audit trail
+   combines both. The financial effect of a monetary event is never inferred from `EventType`; it is
+   calculated from the account's ledger entries for that transaction:
+   $$\text{balanceChange} = \sum \text{CREDIT amounts for account} - \sum \text{DEBIT amounts for account}$$
+   Multiple ledger entries for the same account within a transaction are summed.
+
+5. **Lifecycle Event Audit Trail Representation:**  
+   For lifecycle events (`ACCOUNT_CREATED`), `balanceChange` is explicitly set to `BigDecimal.ZERO`
+   (avoiding client-side `null` handling), and `runningBalance` remains unchanged (`0.00` for initial creation).
+   Monetary events accumulate `runningBalance` sequentially forward from `BigDecimal.ZERO`.
+
+6. **Unified Public Account Validation (`SYS-CASH` Guard):**  
+   Implement a private `validatePublicAccount(Long accountId)` helper at the `AuditServiceImpl` entry
+   point. If the account is missing or resolves to `SYS-CASH`, throw `AccountNotFoundException` (404).
+   This guarantees uniform 404 behavior across all five endpoints and prevents internal `500` leaks
+   from lower-layer services (such as `BalanceReconstructionService`'s internal `IllegalStateException`).
+
+7. **Type-Safe `OffsetDateTime` Parameter & Centralized Error Handling:**  
+   Accept `@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime asOf`.
+   Add `@ExceptionHandler(MethodArgumentTypeMismatchException.class)` to `GlobalExceptionHandler` to
+   return standard `400 Bad Request` `ApiError` JSON when parameters cannot be parsed.
+
+8. **Constant-Query Batch Loading ($O(1)$ Queries):**  
+   All audit methods execute in a constant number of database queries relative to historical record count,
+   batch-loading transactions and ledger entries using `findAllById` and `findByTransactionIdIn`. Zero
+   repository queries occur inside per-record iteration loops.
+
+9. **Strictly Read-Only Scope with Zero Database Migrations:**  
+   Phase 7 introduces no mutation endpoints, no database tables, no schema migrations, and no caching
+   layers.
+
+### Alternatives Considered
+
+- **Top-level `/audit/accounts/{accountId}` namespace:** Rejected because accounts are the primary domain
+  aggregate; scoping audit as a sub-resource aligns with REST conventions established in Phase 1 and 4.
+- **Sorting transaction history by `Transaction.createdAt`:** Rejected because transactions have no direct
+  account ownership; sorting by transaction table timestamps divorces transaction history from the account's
+  actual event sequence.
+- **Inferring balance changes from `EventType`:** Rejected because event types indicate business intent,
+  not accounting leg amounts. Relying on ledger entries honors double-entry bookkeeping invariants and
+  handles multi-entry transactions correctly.
+- **Using `balanceChange = null` for `ACCOUNT_CREATED`:** Rejected in favor of `BigDecimal.ZERO` to maintain
+  a predictable numeric contract for API consumers and eliminate special-case null checks.
+- **Adding a composite index on `(account_id, created_at, id)` for `ledger_entries`:** Deferred because
+  the existing `(account_id)` index filters candidate rows and PostgreSQL efficiently handles sorting for
+  expected transaction volumes. Index optimization is deferred to performance benchmarking (Phase 9).
+
+### Rationale
+
+Separating the chronological business event stream from double-entry financial effects while uniting them
+in the audit trail fulfills the core vision of event-sourced accounting. Clients receive a human-readable,
+mathematically verifiable explanation of every balance.
+
+Batch loading ensures production-ready query performance without N+1 query penalties. Enforcing public
+account validation at the service boundary guarantees that system contra-accounts remain completely
+opaque to external clients.
+
+### Consequences
+
+Positive
+
+- Complete financial auditability and traceability exposed via standardized REST APIs
+- Every balance is fully explainable event by event with running balances
+- Transaction history is deterministically synchronized with the account event timeline
+- Zero N+1 query bottlenecks during audit queries
+- Strict read-only separation preserves financial immutability
+- Consistent 404 handling across all endpoints for missing accounts and system accounts
+- Zero Flyway migrations or schema changes required
+
+Negative
+
+- Audit trail generation requires in-memory aggregation of batch-loaded ledger entries, which scales
+  with the number of historical events for an account (snapshotting in future phases can bound this)
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.
