@@ -13,15 +13,13 @@ import com.ledger.common.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.ledger.common.dto.PagedResponse;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -45,6 +43,9 @@ class AccountControllerTest {
 
         @Mock
         private AccountService accountService;
+
+        @InjectMocks
+        private AccountController accountController;
 
         private MockMvc mockMvc;
 
@@ -72,12 +73,10 @@ class AccountControllerTest {
 
         @BeforeEach
         void setUp() {
-                AccountController accountController = new AccountController(accountService);
 
                 mockMvc = MockMvcBuilders
                                 .standaloneSetup(accountController)
                                 .setControllerAdvice(new GlobalExceptionHandler())
-                                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                                 .build();
         }
 
@@ -221,12 +220,21 @@ class AccountControllerTest {
         void getAllAccounts_returns200() throws Exception {
 
                 // Arrange
-                Page<AccountResponse> page = new PageImpl<>(
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
                                 List.of(sampleResponse()),
-                                PageRequest.of(0, 20),
+                                0,
+                                20,
+                                1,
                                 1);
 
-                when(accountService.getAllAccounts(any())).thenReturn(page);
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null))
+                                .thenReturn(response);
 
                 // Act & Assert
                 mockMvc.perform(get("/accounts")
@@ -234,25 +242,300 @@ class AccountControllerTest {
                                 .param("size", "20"))
                                 .andExpect(status().isOk())
                                 .andExpect(jsonPath("$.content").isArray())
-                                .andExpect(jsonPath("$.content[0].accountNumber").value(ACCOUNT_NUMBER))
+                                .andExpect(jsonPath("$.content[0].accountNumber")
+                                                .value(ACCOUNT_NUMBER))
+                                .andExpect(jsonPath("$.page").value(0))
+                                .andExpect(jsonPath("$.size").value(20))
+                                .andExpect(jsonPath("$.totalPages").value(1))
                                 .andExpect(jsonPath("$.totalElements").value(1));
         }
 
-        // -----------------------------------------------------------------------
-        // Test 7: GET /accounts/{id} — 200 account found
-        // -----------------------------------------------------------------------
+        @Test
+        void getAllAccounts_defaultsPaginationAndSorting() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.page").value(0))
+                                .andExpect(jsonPath("$.size").value(20))
+                                .andExpect(jsonPath("$.totalPages").value(1))
+                                .andExpect(jsonPath("$.totalElements").value(1))
+                                .andExpect(jsonPath("$.content").isArray());
+        }
 
         @Test
-        void getAccountById_returns200() throws Exception {
+        void getAllAccounts_customPagination_returns200() throws Exception {
 
-                // Arrange
-                when(accountService.getAccountById(ACCOUNT_ID)).thenReturn(sampleResponse());
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                2,
+                                10,
+                                5,
+                                50);
 
-                // Act & Assert
-                mockMvc.perform(get("/accounts/{id}", ACCOUNT_ID))
+                when(accountService.getAllAccounts(
+                                2,
+                                10,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("page", "2")
+                                .param("size", "10"))
                                 .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.id").value(ACCOUNT_ID))
-                                .andExpect(jsonPath("$.accountNumber").value(ACCOUNT_NUMBER));
+                                .andExpect(jsonPath("$.page").value(2))
+                                .andExpect(jsonPath("$.size").value(10))
+                                .andExpect(jsonPath("$.totalPages").value(5))
+                                .andExpect(jsonPath("$.totalElements").value(50));
+        }
+
+        @Test
+        void getAllAccounts_filterByStatus_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                AccountStatus.ACTIVE,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("status", "ACTIVE"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        void getAllAccounts_filterByAccountType_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                AccountType.SAVINGS))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("accountType", "SAVINGS"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        void getAllAccounts_combinedFilters_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                AccountStatus.ACTIVE,
+                                AccountType.SAVINGS))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("status", "ACTIVE")
+                                .param("accountType", "SAVINGS"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        void getAllAccounts_sortByAccountNameDescending_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "accountName",
+                                "desc",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("sortBy", "accountName")
+                                .param("direction", "desc"))
+                                .andExpect(status().isOk());
+        }
+
+        @Test
+        void getAllAccounts_uppercaseDirection_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(sampleResponse()),
+                                0,
+                                20,
+                                1,
+                                1);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "DESC",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("direction", "DESC"))
+                                .andExpect(status().isOk());
+        }
+
+        @Test
+        void getAllAccounts_negativePage_returns400() throws Exception {
+
+                mockMvc.perform(get("/accounts")
+                                .param("page", "-1"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.status").value(400))
+                                .andExpect(jsonPath("$.error").value("Bad Request"));
+        }
+
+        @Test
+        void getAllAccounts_zeroSize_returns400() throws Exception {
+
+                mockMvc.perform(get("/accounts")
+                                .param("size", "0"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.status").value(400))
+                                .andExpect(jsonPath("$.error").value("Bad Request"));
+        }
+
+        @Test
+        void getAllAccounts_sizeAboveMaximum_returns400() throws Exception {
+
+                mockMvc.perform(get("/accounts")
+                                .param("size", "101"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.status").value(400))
+                                .andExpect(jsonPath("$.error").value("Bad Request"));
+        }
+
+        @Test
+        void getAllAccounts_invalidSortField_returns400() throws Exception {
+
+                mockMvc.perform(get("/accounts")
+                                .param("sortBy", "status"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.status").value(400))
+                                .andExpect(jsonPath("$.error").value("Bad Request"));
+        }
+
+        @Test
+        void getAllAccounts_invalidDirection_returns400() throws Exception {
+
+                mockMvc.perform(get("/accounts")
+                                .param("direction", "sideways"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.status").value(400))
+                                .andExpect(jsonPath("$.error").value("Bad Request"));
+        }
+
+        @Test
+        void getAllAccounts_outOfRangePage_returns200WithEmptyContent() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(),
+                                999,
+                                20,
+                                2,
+                                25);
+
+                when(accountService.getAllAccounts(
+                                999,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("page", "999")
+                                .param("size", "20"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.content").isArray())
+                                .andExpect(jsonPath("$.content").isEmpty())
+                                .andExpect(jsonPath("$.page").value(999))
+                                .andExpect(jsonPath("$.size").value(20))
+                                .andExpect(jsonPath("$.totalPages").value(2))
+                                .andExpect(jsonPath("$.totalElements").value(25));
+        }
+
+        @Test
+        void getAllAccounts_maximumPageSize_returns200() throws Exception {
+
+                PagedResponse<AccountResponse> response = new PagedResponse<>(
+                                List.of(),
+                                0,
+                                100,
+                                0,
+                                0);
+
+                when(accountService.getAllAccounts(
+                                0,
+                                100,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null))
+                                .thenReturn(response);
+
+                mockMvc.perform(get("/accounts")
+                                .param("size", "100"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.size").value(100));
         }
 
         // -----------------------------------------------------------------------

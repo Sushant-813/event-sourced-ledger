@@ -13,6 +13,8 @@ import com.ledger.account.service.AccountServiceImpl;
 import java.util.Optional;
 import com.ledger.account.exception.AccountNotFoundException;
 import com.ledger.common.constant.SystemAccountConstants;
+import com.ledger.common.dto.PagedResponse;
+import org.springframework.data.domain.Sort;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -242,7 +244,11 @@ class AccountServiceImplTest {
         void getAllAccounts_success() {
 
                 // Arrange
-                Pageable pageable = PageRequest.of(0, 20);
+                Pageable pageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.ASC, "createdAt")
+                                                .and(Sort.by(Sort.Direction.ASC, "id")));
 
                 Account account = new Account();
                 account.setAccountNumber("ACC001");
@@ -270,12 +276,21 @@ class AccountServiceImplTest {
                                 .thenReturn(response);
 
                 // Act
-                Page<AccountResponse> result = accountService.getAllAccounts(pageable);
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null);
 
                 // Assert
-                assertEquals(1, result.getTotalElements());
-                assertEquals(1, result.getContent().size());
-                assertEquals(response, result.getContent().get(0));
+                assertEquals(1, result.totalElements());
+                assertEquals(1, result.content().size());
+                assertEquals(response, result.content().get(0));
+                assertEquals(0, result.page());
+                assertEquals(20, result.size());
+                assertEquals(1, result.totalPages());
 
                 verify(accountRepository).findAllByAccountNumberNot(
                                 SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
@@ -600,5 +615,234 @@ class AccountServiceImplTest {
                 verify(accountRepository).existsByAccountNumber("ACC001");
                 verify(accountRepository).save(any(Account.class));
                 verifyNoInteractions(accountMapper);
+        }
+
+        @Test
+        void getAllAccounts_statusFilter_usesStatusRepositoryMethod() {
+
+                Account account = new Account();
+                account.setAccountNumber("ACC001");
+                account.setAccountName("John Doe");
+                account.setAccountType(AccountType.SAVINGS);
+                account.setStatus(AccountStatus.ACTIVE);
+
+                AccountResponse response = new AccountResponse(
+                                1L,
+                                "ACC001",
+                                "John Doe",
+                                AccountType.SAVINGS,
+                                AccountStatus.ACTIVE,
+                                null,
+                                null);
+
+                Pageable pageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.ASC, "createdAt")
+                                                .and(Sort.by(Sort.Direction.ASC, "id")));
+
+                Page<Account> accountPage = new PageImpl<>(List.of(account), pageable, 1);
+
+                when(accountRepository.findAllByAccountNumberNotAndStatus(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                AccountStatus.ACTIVE,
+                                pageable))
+                                .thenReturn(accountPage);
+
+                when(accountMapper.toResponse(account))
+                                .thenReturn(response);
+
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                AccountStatus.ACTIVE,
+                                null);
+
+                assertEquals(1, result.totalElements());
+                assertEquals(response, result.content().get(0));
+
+                verify(accountRepository)
+                                .findAllByAccountNumberNotAndStatus(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                                AccountStatus.ACTIVE,
+                                                pageable);
+        }
+
+        @Test
+        void getAllAccounts_accountTypeFilter_usesAccountTypeRepositoryMethod() {
+
+                Account account = new Account();
+                account.setAccountNumber("ACC001");
+                account.setAccountName("John Doe");
+                account.setAccountType(AccountType.SAVINGS);
+                account.setStatus(AccountStatus.ACTIVE);
+
+                AccountResponse response = new AccountResponse(
+                                1L,
+                                "ACC001",
+                                "John Doe",
+                                AccountType.SAVINGS,
+                                AccountStatus.ACTIVE,
+                                null,
+                                null);
+
+                Pageable pageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.ASC, "createdAt")
+                                                .and(Sort.by(Sort.Direction.ASC, "id")));
+
+                Page<Account> accountPage = new PageImpl<>(List.of(account), pageable, 1);
+
+                when(accountRepository.findAllByAccountNumberNotAndAccountType(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                AccountType.SAVINGS,
+                                pageable))
+                                .thenReturn(accountPage);
+
+                when(accountMapper.toResponse(account))
+                                .thenReturn(response);
+
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                AccountType.SAVINGS);
+
+                assertEquals(1, result.totalElements());
+                assertEquals(response, result.content().get(0));
+
+                verify(accountRepository)
+                                .findAllByAccountNumberNotAndAccountType(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                                AccountType.SAVINGS,
+                                                pageable);
+        }
+
+        @Test
+        void getAllAccounts_bothFilters_usesCombinedRepositoryMethod() {
+
+                Account account = new Account();
+                account.setAccountNumber("ACC001");
+                account.setAccountName("John Doe");
+                account.setAccountType(AccountType.SAVINGS);
+                account.setStatus(AccountStatus.ACTIVE);
+
+                AccountResponse response = new AccountResponse(
+                                1L,
+                                "ACC001",
+                                "John Doe",
+                                AccountType.SAVINGS,
+                                AccountStatus.ACTIVE,
+                                null,
+                                null);
+
+                Pageable pageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.ASC, "createdAt")
+                                                .and(Sort.by(Sort.Direction.ASC, "id")));
+
+                Page<Account> accountPage = new PageImpl<>(List.of(account), pageable, 1);
+
+                when(accountRepository
+                                .findAllByAccountNumberNotAndStatusAndAccountType(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                                AccountStatus.ACTIVE,
+                                                AccountType.SAVINGS,
+                                                pageable))
+                                .thenReturn(accountPage);
+
+                when(accountMapper.toResponse(account))
+                                .thenReturn(response);
+
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                AccountStatus.ACTIVE,
+                                AccountType.SAVINGS);
+
+                assertEquals(1, result.totalElements());
+                assertEquals(response, result.content().get(0));
+
+                verify(accountRepository)
+                                .findAllByAccountNumberNotAndStatusAndAccountType(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                                AccountStatus.ACTIVE,
+                                                AccountType.SAVINGS,
+                                                pageable);
+        }
+
+        @Test
+        void getAllAccounts_sortingIncludesIdTieBreaker() {
+                Pageable expectedPageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.DESC, "accountName")
+                                                .and(Sort.by(Sort.Direction.DESC, "id")));
+
+                Page<Account> accountPage = new PageImpl<>(
+                                List.of(),
+                                expectedPageable,
+                                0);
+
+                when(accountRepository.findAllByAccountNumberNot(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                expectedPageable))
+                                .thenReturn(accountPage);
+
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "accountName",
+                                "desc",
+                                null,
+                                null);
+
+                assertEquals(0, result.totalElements());
+
+                verify(accountRepository).findAllByAccountNumberNot(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                expectedPageable);
+        }
+
+        @Test
+        void getAllAccounts_emptyResult_returnsEmptyPagedResponse() {
+
+                Pageable pageable = PageRequest.of(
+                                0,
+                                20,
+                                Sort.by(Sort.Direction.ASC, "createdAt")
+                                                .and(Sort.by(Sort.Direction.ASC, "id")));
+
+                Page<Account> accountPage = new PageImpl<>(
+                                List.of(),
+                                pageable,
+                                0);
+
+                when(accountRepository.findAllByAccountNumberNot(
+                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER,
+                                pageable))
+                                .thenReturn(accountPage);
+
+                PagedResponse<AccountResponse> result = accountService.getAllAccounts(
+                                0,
+                                20,
+                                "createdAt",
+                                "asc",
+                                null,
+                                null);
+
+                assertEquals(0, result.totalElements());
+                assertEquals(0, result.totalPages());
+                assertEquals(0, result.content().size());
+                assertEquals(0, result.page());
+                assertEquals(20, result.size());
         }
 }

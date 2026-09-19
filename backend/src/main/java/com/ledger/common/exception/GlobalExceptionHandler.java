@@ -452,6 +452,47 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 return ResponseEntity.badRequest().body(body);
         }
 
+        @ExceptionHandler(InvalidPageParameterException.class)
+        public ResponseEntity<ApiError> handleInvalidPageParameter(
+                        InvalidPageParameterException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn(
+                                "400 Invalid page parameter on {}: {}",
+                                path,
+                                ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.BAD_REQUEST.value(),
+                                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity.badRequest().body(body);
+        }
+
+        @ExceptionHandler(InvalidSortFieldException.class)
+        public ResponseEntity<ApiError> handleInvalidSortField(
+                        InvalidSortFieldException ex,
+                        HttpServletRequest request) {
+
+                String path = request.getRequestURI();
+
+                log.warn(
+                                "400 Invalid sort parameter on {}: {}",
+                                path,
+                                ex.getMessage());
+
+                ApiError body = ApiError.of(
+                                HttpStatus.BAD_REQUEST.value(),
+                                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                                ex.getMessage(),
+                                path);
+
+                return ResponseEntity.badRequest().body(body);
+        }
         // -------------------------------------------------------------------------
         // 500 — Catch-all for any unhandled exception
         // -------------------------------------------------------------------------

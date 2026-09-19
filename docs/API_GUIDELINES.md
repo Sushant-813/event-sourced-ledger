@@ -264,54 +264,111 @@ Error responses should never expose:
 
 # 11. Pagination
 
-Endpoints returning collections should support pagination.
+Endpoints returning collections support deterministic, bounded pagination to protect against
+memory exhaustion and unconstrained database queries.
 
-Example
+## Generic Pagination Contract (`PagedResponse<T>`)
 
+Normal collection endpoints return the project-owned `PagedResponse<T>` record:
+
+```json
+{
+  "content": [ ... ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 5,
+  "totalElements": 95
+}
 ```
-GET /transactions?page=0&size=20
-```
 
-Responses should include:
+Metadata fields:
+- `content`: Array of elements for the requested page
+- `page`: Zero-based page number (`int`)
+- `size`: Number of elements per page (`int`)
+- `totalPages`: Total number of pages available (`int`)
+- `totalElements`: Total number of elements matching the query across all pages (`long`)
 
-- current page
-- page size
-- total pages
-- total elements
+## Pagination Defaults & Boundaries
+
+Standard pagination constraints are centralized in `PaginationConstants` and enforced via `PaginationValidator`:
+- `page` default: `0` (`DEFAULT_PAGE`)
+- `size` default: `20` (`DEFAULT_SIZE`)
+- Minimum `page`: `0` (negative page numbers throw `InvalidPageParameterException` → HTTP 400)
+- Minimum `size`: `1` (`size < 1` throws `InvalidPageParameterException` → HTTP 400)
+- Maximum `size`: `100` (`MAX_SIZE`; `size > 100` throws `InvalidPageParameterException` → HTTP 400)
+
+## Out-of-Range Pages
+
+Valid requests where the requested page is beyond the available data (e.g. `page = 10` when only
+2 pages exist) return **HTTP 200 OK** with an empty content array (`"content": []`), while
+preserving the accurate `page`, `size`, `totalPages`, and `totalElements` metadata. This conforms
+to standard REST pagination semantics.
+
+## Specialized Financial Audit Trail Response
+
+The audit trail endpoint (`GET /accounts/{accountId}/audit/trail`) intentionally does not use
+`PagedResponse<T>`. Instead, it uses the specialized `AuditTrailResponse` DTO to preserve critical
+financial context (`accountId`, `finalBalance`, `asOf`) alongside the paginated `items` slice.
+See [Section 21](#get-account-audit-trail) for details.
+
+## No Global Response Envelope
+
+The project deliberately avoids global response envelope wrappers (such as `{ "data": ..., "meta": ... }`).
+Single-resource endpoints return the resource representation directly, and collection endpoints return
+`PagedResponse<T>` or `AuditTrailResponse`.
 
 ---
 
 # 12. Sorting
 
-Collection endpoints should support sorting.
+Collection endpoints support safe, predictable sorting with deterministic ordering guarantees.
 
-Example
+## Query Parameters
 
-```
-GET /events?sort=occurredAt,desc
-```
+- `sortBy`: Name of the field to sort by (e.g. `createdAt`, `occurredAt`)
+- `direction`: Sort direction (`asc` or `desc`, case-insensitive)
 
-Sorting should remain optional.
+## Strict Sort Allowlisting
+
+Every sortable endpoint enforces an explicit, immutable allowlist of supported sort fields via
+`SortValidator`. Supplying an unallowed sort field throws `InvalidSortFieldException` (HTTP 400 Bad Request),
+preventing SQL injection, property path errors, and unauthorized exposure of internal database fields.
+Similarly, invalid sort directions (values other than `asc` or `desc`) throw `InvalidSortFieldException` (HTTP 400).
+
+## Deterministic ID Tie-Breaker
+
+To eliminate "pagination drift" (records appearing on multiple pages or being skipped across page
+fetches when sort field values are identical), `SortValidator` automatically appends a secondary
+sort on `id` using the **same requested direction**:
+
+$$\text{ORDER BY } \text{sortBy } \text{dir}, \text{ id } \text{dir}$$
+
+For example, `sortBy=createdAt&direction=desc` produces `ORDER BY createdAt DESC, id DESC`.
+
+## Presentation Sorting vs. Canonical History
+
+Public presentation sorting requested at the API boundary applies only to presentation formatting.
+It does **not** alter the internal canonical reconstruction order (`occurredAt ASC, id ASC`) used
+for balance calculation and ledger replay.
 
 ---
 
 # 13. Filtering
 
-Filtering should use query parameters.
+Filtering is supported via explicit query parameters on collection endpoints.
 
-Examples
+## Rules
 
-```
-GET /events?accountId=5
-```
-
-```
-GET /transactions?status=COMPLETED
-```
-
-```
-GET /events?eventType=DEPOSIT
-```
+- **Pre-Pagination Filtering:** All filtering is executed in the database **before** counting,
+  sorting, and pagination. `totalElements` and `totalPages` always reflect the filtered result set.
+- **Filter vs. Sort Separation:** Filtering parameters (such as `status` and `accountType` on
+  `/accounts`) are strictly filters and are **not** sortable fields. Supplying a filter field to
+  `sortBy` is rejected with HTTP 400 Bad Request.
+- **System Account Boundary:** Account filtering permanently excludes the internal `SYS-CASH`
+  contra-account across all filter combinations.
+- **Timeline Invariance:** Certain endpoints intentionally disallow filtering to protect domain
+  integrity. For example, `GET /accounts/{accountId}/audit/events` does not support filtering by
+  `eventType`, ensuring the event timeline remains complete and audit-compliant.
 
 ---
 
@@ -433,21 +490,108 @@ Every API should follow these rules.
 
 # 21. Implemented Endpoints Reference
 
-This section documents the endpoints implemented through Phase 5.
+This section documents the endpoints implemented through Phase 8.
 
 ---
 
-## Account Endpoints (Phase 1)
+## Account Endpoints (Phase 1 & Phase 8 Refinement)
 
-| Method | Path | Description | Success |
-|--------|------|-------------|---------|
-| `POST` | `/accounts` | Create a new customer account | 201 |
-| `GET` | `/accounts` | Paginated list of customer accounts (excludes `SYS-CASH`) | 200 |
-| `GET` | `/accounts/{id}` | Get a customer account by internal ID | 200 |
-| `GET` | `/accounts/by-number/{accountNumber}` | Get a customer account by business account number | 200 |
-| `PATCH` | `/accounts/{id}/freeze` | Freeze an `ACTIVE` account | 200 |
-| `PATCH` | `/accounts/{id}/activate` | Activate a `FROZEN` account | 200 |
-| `PATCH` | `/accounts/{id}/close` | Close an account (terminal) | 200 |
+### POST /accounts
+
+Creates a new customer account.
+
+**Request Body:** `CreateAccountRequest`
+
+```json
+{
+  "accountNumber": "ACC-1001",
+  "accountName": "Alice Savings",
+  "accountType": "SAVINGS"
+}
+```
+
+**Success Response:** `201 Created` — `AccountResponse`
+
+---
+
+### GET /accounts
+
+Returns a paginated list of customer accounts with optional filtering and sorting. Excludes `SYS-CASH`.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description / Constraints |
+|-----------|------|----------|---------|---------------------------|
+| `page` | `int` | No | `0` | Zero-based page number. Must be `>= 0`. |
+| `size` | `int` | No | `20` | Number of accounts per page. Must be `>= 1` and `<= 100`. |
+| `sortBy` | `string` | No | `createdAt` | Field used to sort accounts. Allowed fields ONLY: `createdAt`, `accountName`, `accountNumber`. |
+| `direction` | `string` | No | `asc` | Sort direction. Allowed values: `asc`, `desc` (case-insensitive). |
+| `status` | `AccountStatus` | No | — | Filter by status (`ACTIVE`, `FROZEN`, `CLOSED`). Filter only, NOT sortable. |
+| `accountType` | `AccountType` | No | — | Filter by account type (`SAVINGS`, `CURRENT`). Filter only, NOT sortable. |
+
+**Sorting & Filtering Rules:**
+- Filtering is executed before counting, sorting, and pagination in database queries.
+- `accountType` and `status` are filters only. Passing them to `sortBy` returns HTTP 400.
+- Every sort query automatically includes a deterministic secondary tie-breaker on `id` in the same requested direction.
+
+**Success Response:** `200 OK` — `PagedResponse<AccountResponse>`
+
+```json
+{
+  "content": [
+    {
+      "id": 1,
+      "accountNumber": "ACC-1001",
+      "accountName": "Alice Savings",
+      "accountType": "SAVINGS",
+      "status": "ACTIVE",
+      "createdAt": "2026-08-12T10:00:00Z",
+      "updatedAt": "2026-08-12T10:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 1
+}
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | `page < 0`, `size < 1`, or `size > 100` (`InvalidPageParameterException`) |
+| 400 | `sortBy` is not in allowlist or `direction` is not `asc`/`desc` (`InvalidSortFieldException`) |
+
+---
+
+### GET /accounts/{id}
+
+Returns a single customer account by internal ID. Returns 404 if missing or if `id` resolves to `SYS-CASH`.
+
+---
+
+### GET /accounts/by-number/{accountNumber}
+
+Returns a single customer account by business account number. Returns 404 if missing or if `accountNumber` is `SYS-CASH`.
+
+---
+
+### PATCH /accounts/{id}/freeze
+
+Transitions an `ACTIVE` account to `FROZEN`. Returns 404 for `SYS-CASH`.
+
+---
+
+### PATCH /accounts/{id}/activate
+
+Transitions a `FROZEN` account to `ACTIVE`. Returns 404 for `SYS-CASH`.
+
+---
+
+### PATCH /accounts/{id}/close
+
+Transitions an `ACTIVE` or `FROZEN` account to `CLOSED`. `CLOSED` is terminal. Returns 404 for `SYS-CASH`.
 
 ---
 
@@ -589,35 +733,55 @@ Transfers funds between two distinct ACTIVE customer accounts.
 
 ---
 
-## Audit Endpoints (Phase 7)
+## Audit Endpoints (Phase 7 & Phase 8 Refinement)
 
 ### Get Account Event History
 
 ```http
-GET /accounts/{accountId}/audit/events
+GET /accounts/{accountId}/audit/events?page=0&size=20&sortBy=occurredAt&direction=asc
 ```
 
-Returns the chronological event history for an account ordered by `occurred_at ASC, id ASC`.
+Returns a paginated chronological event history for an account.
 
-**Response (`200 OK`):**
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Query Parameters:**
+- `page`: zero-based page number (optional, default `0`, min `0`)
+- `size`: number of events per page (optional, default `20`, min `1`, max `100`)
+- `sortBy`: field to sort by (optional, default `occurredAt`). Allowed field ONLY: `occurredAt`.
+- `direction`: sort direction (optional, default `asc`). Allowed values: `asc`, `desc`.
+
+**Rules:**
+- No `eventType` filter is supported; event stream completeness is preserved.
+- Automatic secondary tie-breaker on `id` in the same direction.
+- Presentation sorting does not affect internal canonical reconstruction order.
+
+**Response (`200 OK`):** `PagedResponse<AccountEventResponse>`
 
 ```json
-[
-  {
-    "eventId": 10,
-    "eventType": "ACCOUNT_CREATED",
-    "transactionId": null,
-    "payload": null,
-    "occurredAt": "2026-09-10T09:00:00Z"
-  },
-  {
-    "eventId": 20,
-    "eventType": "DEPOSIT",
-    "transactionId": 100,
-    "payload": null,
-    "occurredAt": "2026-09-10T10:00:00Z"
-  }
-]
+{
+  "content": [
+    {
+      "eventId": 10,
+      "eventType": "ACCOUNT_CREATED",
+      "transactionId": null,
+      "payload": null,
+      "occurredAt": "2026-09-10T09:00:00Z"
+    },
+    {
+      "eventId": 20,
+      "eventType": "DEPOSIT",
+      "transactionId": 100,
+      "payload": null,
+      "occurredAt": "2026-09-10T10:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 2
+}
 ```
 
 **Errors:**
@@ -625,6 +789,8 @@ Returns the chronological event history for an account ordered by `occurred_at A
 | Status | Condition |
 |--------|-----------|
 | 400 | `accountId` is non-positive or non-numeric (`ConstraintViolationException`) |
+| 400 | `page < 0`, `size < 1`, or `size > 100` (`InvalidPageParameterException`) |
+| 400 | `sortBy` is not `occurredAt` or `direction` is not `asc`/`desc` (`InvalidSortFieldException`) |
 | 404 | Account not found or resolves to `SYS-CASH` (`AccountNotFoundException`) |
 
 ---
@@ -632,24 +798,45 @@ Returns the chronological event history for an account ordered by `occurred_at A
 ### Get Account Transaction History
 
 ```http
-GET /accounts/{accountId}/audit/transactions
+GET /accounts/{accountId}/audit/transactions?page=0&size=20
 ```
 
-Returns all financial transactions in which the account participated, ordered by the first
-occurrence of the transaction in the account's monetary event timeline.
+Returns paginated financial transactions involving an account in event-derived chronological order.
 
-**Response (`200 OK`):**
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Query Parameters:**
+- `page`: zero-based page number (optional, default `0`, min `0`)
+- `size`: number of transactions per page (optional, default `20`, min `1`, max `100`)
+
+**Event-Derived Ordering & Pagination:**
+- No arbitrary database pagination of events.
+- Canonical events are loaded in chronological order (`occurredAt ASC, id ASC`).
+- Unique transaction IDs are extracted preserving first-occurrence order into a `LinkedHashSet`.
+- `totalElements` represents the total count of unique transactions.
+- The requested page slice of transaction IDs is computed in memory.
+- Only transactions for the requested page slice are batch-loaded via `transactionRepository.findAllById`.
+- Event-derived order is restored for the final page response.
+
+**Response (`200 OK`):** `PagedResponse<AccountTransactionResponse>`
 
 ```json
-[
-  {
-    "transactionId": 100,
-    "referenceNumber": "TXN-001",
-    "transactionType": "DEPOSIT",
-    "status": "COMPLETED",
-    "createdAt": "2026-09-10T10:00:00Z"
-  }
-]
+{
+  "content": [
+    {
+      "transactionId": 100,
+      "referenceNumber": "TXN-001",
+      "transactionType": "DEPOSIT",
+      "status": "COMPLETED",
+      "createdAt": "2026-09-10T10:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 1
+}
 ```
 
 **Errors:**
@@ -657,6 +844,7 @@ occurrence of the transaction in the account's monetary event timeline.
 | Status | Condition |
 |--------|-----------|
 | 400 | `accountId` is non-positive or non-numeric |
+| 400 | `page < 0`, `size < 1`, or `size > 100` (`InvalidPageParameterException`) |
 | 404 | Account not found or resolves to `SYS-CASH` |
 
 ---
@@ -664,25 +852,44 @@ occurrence of the transaction in the account's monetary event timeline.
 ### Get Account Ledger History
 
 ```http
-GET /accounts/{accountId}/audit/ledger
+GET /accounts/{accountId}/audit/ledger?page=0&size=20&sortBy=createdAt&direction=asc&entryType=CREDIT
 ```
 
-Returns all double-entry ledger entries affecting the account in chronological order with
-matched transaction reference numbers.
+Returns paginated double-entry ledger entries affecting the account with matched transaction reference numbers.
 
-**Response (`200 OK`):**
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Query Parameters:**
+- `page`: zero-based page number (optional, default `0`, min `0`)
+- `size`: number of entries per page (optional, default `20`, min `1`, max `100`)
+- `sortBy`: field to sort by (optional, default `createdAt`). Allowed field ONLY: `createdAt`.
+- `direction`: sort direction (optional, default `asc`). Allowed values: `asc`, `desc`.
+- `entryType`: optional filter by entry type (`CREDIT`, `DEBIT`). Filtered before count/sort/pagination.
+
+**Batch Loading:**
+- Associated transactions for the paginated ledger slice are batch-loaded in bulk via `findAllById`,
+  guaranteeing $O(1)$ query complexity without N+1 repository calls.
+
+**Response (`200 OK`):** `PagedResponse<AccountLedgerEntryResponse>`
 
 ```json
-[
-  {
-    "ledgerEntryId": 50,
-    "transactionId": 100,
-    "referenceNumber": "TXN-001",
-    "entryType": "CREDIT",
-    "amount": "1000.00",
-    "createdAt": "2026-09-10T10:00:00Z"
-  }
-]
+{
+  "content": [
+    {
+      "ledgerEntryId": 50,
+      "transactionId": 100,
+      "referenceNumber": "TXN-001",
+      "entryType": "CREDIT",
+      "amount": "1000.00",
+      "createdAt": "2026-09-10T10:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 1
+}
 ```
 
 **Errors:**
@@ -690,6 +897,8 @@ matched transaction reference numbers.
 | Status | Condition |
 |--------|-----------|
 | 400 | `accountId` is non-positive or non-numeric |
+| 400 | `page < 0`, `size < 1`, or `size > 100` (`InvalidPageParameterException`) |
+| 400 | `sortBy` is not `createdAt` or `direction` is not `asc`/`desc` (`InvalidSortFieldException`) |
 | 404 | Account not found or resolves to `SYS-CASH` |
 
 ---
@@ -705,7 +914,7 @@ Returns the reconstructed balance of the account derived from its historical rec
 is omitted, returns the current reconstructed balance and `asOf = null`. When `asOf` is provided,
 reconstructs the balance inclusive of all events where `occurredAt <= asOf`.
 
-**Response (`200 OK`):**
+**Response (`200 OK`):** `AuditBalanceResponse`
 
 ```json
 {
@@ -729,15 +938,35 @@ reconstructs the balance inclusive of all events where `occurredAt <= asOf`.
 ### Get Account Audit Trail
 
 ```http
-GET /accounts/{accountId}/audit/trail
-GET /accounts/{accountId}/audit/trail?asOf=2026-09-10T12:00:00Z
+GET /accounts/{accountId}/audit/trail?page=0&size=20
+GET /accounts/{accountId}/audit/trail?asOf=2026-09-10T12:00:00Z&page=0&size=20
 ```
 
-Returns an event-by-event explanation of how the balance evolved. Each monetary event derives its
-signed balance effect from the account's ledger entries. Lifecycle events (`ACCOUNT_CREATED`)
-have `balanceChange = 0.00` and preserve running balance.
+Returns a paginated chronological explanation of how the account balance evolved.
 
-**Response (`200 OK`):**
+**Path Variable:**
+- `accountId` — internal account ID (must be positive)
+
+**Query Parameters:**
+- `asOf`: optional ISO-8601 timestamp for historical reconstruction boundary
+- `page`: zero-based page number (optional, default `0`, min `0`)
+- `size`: number of audit trail items per page (optional, default `20`, min `1`, max `100`)
+
+**Accounting & Pagination Invariants:**
+1. **Full History Reconstructed First:** Complete canonical event history up to `asOf` is replayed
+   and reconstructed before any pagination slicing occurs.
+2. **Absolute Running Balances:** Running balances represent absolute cumulative values from account
+   inception, never relative to the current page.
+3. **True Final Balance:** `finalBalance` reflects the complete reconstructed balance across the full
+   event history, unaffected by the requested page.
+4. **Post-Reconstruction Slicing:** Slicing of `items` occurs AFTER full running-balance accumulation.
+5. **Out-of-Range Behavior:** Valid out-of-range page requests return HTTP 200 with an empty `items: []`
+   array while retaining accurate `finalBalance`, `totalPages`, and `totalElements` metadata.
+6. **No Arbitrary Sorting/Filtering:** Arbitrary sorting or filtering is disallowed to preserve chronological
+   financial truth.
+7. **Batch Loading:** Transactions and ledger entries are batch-loaded in bulk, preventing N+1 queries.
+
+**Response (`200 OK`):** `AuditTrailResponse`
 
 ```json
 {
@@ -772,7 +1001,11 @@ have `balanceChange = 0.00` and preserve running balance.
       "runningBalance": "750.00",
       "occurredAt": "2026-09-10T10:00:00Z"
     }
-  ]
+  ],
+  "page": 0,
+  "size": 20,
+  "totalPages": 1,
+  "totalElements": 3
 }
 ```
 
@@ -782,6 +1015,7 @@ have `balanceChange = 0.00` and preserve running balance.
 |--------|-----------|
 | 400 | `accountId` is non-positive or non-numeric |
 | 400 | `asOf` query parameter is malformed / invalid ISO-8601 string |
+| 400 | `page < 0`, `size < 1`, or `size > 100` (`InvalidPageParameterException`) |
 | 404 | Account not found or resolves to `SYS-CASH` |
 | 500 | Historical data integrity invariant violated |
 

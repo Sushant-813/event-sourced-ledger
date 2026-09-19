@@ -10,8 +10,9 @@ correctness, complete auditability, and the ability to reconstruct any past stat
 alone.
 
 > **Development is incremental.** The event store, ledger processing, deposits, withdrawals,
-> transfers, and internal balance reconstruction are complete through Phase 6. See the
-> [Development Roadmap](#development-roadmap) for completed and upcoming milestones.
+> transfers, internal balance reconstruction, audit module, and API refinement are complete
+> through Phase 8. See the [Development Roadmap](#development-roadmap) for completed and
+> upcoming milestones.
 
 ---
 
@@ -27,8 +28,8 @@ alone.
 | Phase 5 | Transfer Engine | **COMPLETED** (2026-09-07) |
 | Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
 | Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
-| Phase 8 | API Refinement | **NEXT** |
-| Phase 9 | Testing & Hardening | Pending |
+| Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
+| Phase 9 | Testing & Hardening | **NEXT** |
 | Phase 10 | Backend v1.0 Release | Pending |
 
 ### Phase 1 — Account Module (completed)
@@ -252,6 +253,48 @@ the implementation rationale and full verification record.
 
 ---
 
+### Phase 8 — API Refinement (completed)
+
+Phase 8 established production-grade pagination, sorting, filtering, and centralized parameter
+validation across all collection endpoints in the system:
+
+- `PagedResponse<T>` generic immutable record (`content`, `page`, `size`, `totalPages`, `totalElements`)
+  standardizing collection response payloads across the API
+- Centralized pagination constraints: `page >= 0` (default 0), `1 <= size <= 100` (default 20);
+  enforced by `PaginationValidator`
+- Centralized sorting allowlists and directions enforced by `SortValidator`
+- Automatic deterministic secondary tie-breaker on `id` in the same requested direction, eliminating
+  pagination drift
+- `GET /accounts` pagination, filtering by `status` and `accountType`, and sorting allowlist
+  (`createdAt`, `accountName`, `accountNumber` ONLY); `status` and `accountType` are filters only
+- Four explicit derived query methods on `AccountRepository` excluding `SYS-CASH` without
+  `JpaSpecificationExecutor`
+- `GET /accounts/{accountId}/audit/events` pagination and sorting on `occurredAt` with deterministic
+  tie-breaker (no event-type filter; presentation sorting decoupled from canonical event replay)
+- `GET /accounts/{accountId}/audit/transactions` pagination in event-derived chronological order; unique
+  transaction IDs derived from events, sliced in memory, and batch-loaded
+- `GET /accounts/{accountId}/audit/ledger` pagination, sorting on `createdAt`, and optional `entryType`
+  filter (`CREDIT`, `DEBIT`); transactions batch-loaded to eliminate N+1 queries
+- Specialized `AuditTrailResponse` for `GET /accounts/{accountId}/audit/trail` retaining `finalBalance`,
+  `asOf`, and pagination metadata; running balances are absolute and calculated after complete
+  reconstruction before page slicing
+- Valid out-of-range page requests return HTTP 200 with empty collections (`content: []` or `items: []`)
+- Centralized exception handling in `GlobalExceptionHandler` mapping `InvalidPageParameterException` and
+  `InvalidSortFieldException` to HTTP 400 Bad Request `ApiError` JSON
+- 27 controller MockMvc tests + 5 service unit tests added (56 new tests; 209 total)
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 209, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+See [ADR-029](docs/DECISIONS.md) and the [Phase 8 project-log entry](docs/PROJECT_LOG.md) for
+the implementation rationale and full verification record.
+
+---
+
 ## Architecture
 
 ```
@@ -304,12 +347,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural 
 
 All responses conform to the standard `ApiError` error structure on failure.
 
-### Account Endpoints (Phase 1)
+### Account Endpoints (Phase 1 & Phase 8 Refinement)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/accounts` | Create a new account (returns 201) |
-| `GET` | `/accounts` | Paginated list of all accounts (excludes `SYS-CASH`) |
+| `GET` | `/accounts` | Paginated list of accounts with filtering (`status`, `accountType`) and sorting (`createdAt`, `accountName`, `accountNumber`; excludes `SYS-CASH`) |
 | `GET` | `/accounts/{id}` | Get a single account by internal ID |
 | `GET` | `/accounts/by-number/{accountNumber}` | Get a single account by business account number |
 | `PATCH` | `/accounts/{id}/freeze` | Transition account from `ACTIVE` to `FROZEN` |
@@ -324,15 +367,15 @@ All responses conform to the standard `ApiError` error structure on failure.
 | `POST` | `/accounts/{accountId}/withdrawal` | Withdraw funds from a customer account (returns 201) |
 | `POST` | `/transfers` | Transfer funds between customer accounts (returns 201) |
 
-### Audit Endpoints (Phase 7)
+### Audit Endpoints (Phase 7 & Phase 8 Refinement)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/accounts/{accountId}/audit/events` | Chronological event history for an account |
-| `GET` | `/accounts/{accountId}/audit/transactions` | Financial transactions involving the account (event-ordered) |
-| `GET` | `/accounts/{accountId}/audit/ledger` | Ledger entries affecting the account with reference numbers |
+| `GET` | `/accounts/{accountId}/audit/events` | Paginated chronological event history (sortBy: `occurredAt`, direction: `asc`/`desc`) |
+| `GET` | `/accounts/{accountId}/audit/transactions` | Paginated financial transactions in event-derived order |
+| `GET` | `/accounts/{accountId}/audit/ledger` | Paginated ledger entries with reference numbers (sortBy: `createdAt`, optional `entryType` filter) |
 | `GET` | `/accounts/{accountId}/audit/balance` | Reconstructed balance (optional `asOf` ISO-8601 query param) |
-| `GET` | `/accounts/{accountId}/audit/trail` | Event-by-event balance explanation with running balance |
+| `GET` | `/accounts/{accountId}/audit/trail` | Paginated event-by-event balance explanation with running balance (`asOf`, `page`, `size`) |
 
 Interactive API documentation is available at `/swagger-ui.html` when the application is
 running.
@@ -416,12 +459,12 @@ mvn clean test
 
 ## Testing
 
-Phase 1 through Phase 6 combined test suite (`mvn clean test`):
+Phase 1 through Phase 8 combined test suite (`mvn clean test`):
 
 | Test class | Type | Tests |
 |---|---|---|
-| `AccountServiceImplTest` | Unit (Mockito, no DB) | 17 |
-| `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 14 |
+| `AccountServiceImplTest` | Unit (Mockito, no DB) | 22 |
+| `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 27 |
 | `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
 | `EventServiceImplTest` | Unit (Mockito, no DB) | 16 |
 | `TransactionServiceImplTest` | Unit (Mockito, no DB) | 22 |
@@ -430,14 +473,16 @@ Phase 1 through Phase 6 combined test suite (`mvn clean test`):
 | `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 9 |
 | `BalanceReconstructionServiceImplTest` | Unit (Mockito, no DB) | 13 |
 | `BalanceReconstructionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 5 |
+| `AuditServiceImplTest` | Unit (Mockito, no DB) | 33 |
+| `AuditControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 32 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
-| **Total** | | **126** |
+| **Total** | | **209** |
 
 **Verified result:**
 
 ```
 mvn clean test
-Tests run: 126, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 209, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -477,7 +522,7 @@ event-sourced-ledger/
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
 | [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-027) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-029) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -493,9 +538,9 @@ event-sourced-ledger/
 | Phase 4 | Deposit & Withdrawal Engine | **COMPLETED** |
 | Phase 5 | Transfer Engine | **COMPLETED** |
 | Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
-| Phase 7 | Audit Module | **NEXT** |
-| Phase 8 | API Refinement | Pending |
-| Phase 9 | Testing & Hardening | Pending |
+| Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
+| Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
+| Phase 9 | Testing & Hardening | **NEXT** |
 | Phase 10 | Backend v1.0 Release | Pending |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and

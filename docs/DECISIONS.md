@@ -1706,6 +1706,182 @@ Negative
 
 ---
 
+# ADR-029
+
+## Title
+
+Deterministic Pagination, Safe Sorting, Dynamic Filtering, and Specialized Audit Serialization
+
+### Status
+
+Accepted
+
+### Context
+
+Through Phase 7, the core event-sourcing and audit engine was established, providing complete
+historical traceability and event-by-event balance reconstruction. However, collection-returning
+endpoints across the system (`GET /accounts`, `GET /accounts/{accountId}/audit/events`,
+`GET /accounts/{accountId}/audit/transactions`, `GET /accounts/{accountId}/audit/ledger`, and
+`GET /accounts/{accountId}/audit/trail`) either returned unpaged arrays or lacked a unified,
+consistent pagination, sorting, and filtering contract.
+
+In a financial system, unpaged collections introduce memory bloat, network latency, and Denial of
+Service vulnerabilities as transactional volume grows. Adding pagination and query capabilities,
+however, introduced several critical architectural challenges:
+
+1. **Pagination Contract Consistency:** How should paginated responses be structured? Directly
+   returning Spring Data's `Page<T>` or `PageImpl<T>` leaks framework-specific internals (such as
+   `sort`, `numberOfElements`, `first`, `last`, `empty`) into API contracts, violating ADR-009.
+2. **Deterministic Pagination & Drift Prevention:** If sort fields contain duplicate values (e.g.,
+   identical `createdAt` or `occurredAt` timestamps), standard database pagination can return
+   indeterminate ordering across pages, causing records to be skipped or duplicated between page
+   fetches ("pagination drift").
+3. **Audit Trail Invariants vs. Slicing:** A financial audit trail explains how an account balance
+   evolved through cumulative running balances. If a database query slices the event stream
+   prematurely via SQL `LIMIT` and `OFFSET`, running balances cannot be calculated accurately without
+   knowledge of earlier events, and the final balance would represent a page-local artifact rather
+   than the authoritative account balance.
+4. **Event-Derived Transaction Pagination:** As established in ADR-028, transactions have no direct
+   account foreign key and must be ordered by their first occurrence in the account's monetary event
+   timeline. Applying database pagination to the `transactions` or `events` table would distort
+   first-occurrence deduplication and chronology.
+5. **Safe Sorting & Filter Security:** Allowing arbitrary client-supplied sort parameters can expose
+   internal column names, cause SQL/Hibernate property path errors, and bypass database indexes.
+   Filtering must be strictly bounded and applied before counting, sorting, and pagination.
+6. **System Account Isolation:** All account collection queries must permanently exclude the internal
+   `SYS-CASH` contra-account (ADR-024) across all filtering combinations.
+
+### Decision
+
+1. **Project-Owned Generic Pagination Contract (`PagedResponse<T>`):**  
+   Define an immutable, generic record `PagedResponse<T>` in `com.ledger.common.dto`:
+   - `content`: `List<T>` containing page items
+   - `page`: zero-based page number (`int`)
+   - `size`: page size (`int`)
+   - `totalPages`: total available pages (`int`)
+   - `totalElements`: total matching records (`long`)  
+   Centralize defaults in `PaginationConstants`: `DEFAULT_PAGE = 0`, `DEFAULT_SIZE = 20`,
+   `MAX_SIZE = 100`. Valid constraints: `page >= 0`, `1 <= size <= 100`. Valid out-of-range page
+   requests return HTTP 200 with empty content (`content: []`) while preserving accurate
+   `totalElements` and `totalPages` metadata. Reject global response envelope wrappers across the API.
+
+2. **Account API Pagination, Filtering, and Safe Sorting (`GET /accounts`):**
+   - **Filtering:** Support optional `status` (`ACTIVE`, `FROZEN`, `CLOSED`) and `accountType`
+     (`SAVINGS`, `CURRENT`) query parameters. Filtering is applied in the database before counting,
+     sorting, and pagination.
+   - **System Isolation:** All queries strictly exclude `SYS-CASH` by filtering on
+     `accountNumber != 'SYS-CASH'`.
+   - **Derived Query Methods:** Implement four explicit derived query methods in `AccountRepository`:
+     `findAllByAccountNumberNot`, `findAllByAccountNumberNotAndStatus`,
+     `findAllByAccountNumberNotAndAccountType`, and
+     `findAllByAccountNumberNotAndStatusAndAccountType`. Explicitly reject `JpaSpecificationExecutor`
+     to preserve compile-time type safety, eliminate Criteria API overhead, and keep queries
+     predictable.
+   - **Strict Sort Allowlist:** Sort fields are restricted strictly to: `createdAt`, `accountName`,
+     and `accountNumber`. `status` and `accountType` are filters only and are rejected if supplied as
+     sort parameters. Default sort: `createdAt ASC`.
+   - **Deterministic Tie-Breaker:** `SortValidator` automatically appends a secondary sort on `id`
+     using the identical requested direction (`Sort.by(direction, sortBy).and(Sort.by(direction, "id"))`),
+     guaranteeing stable, drift-free pagination.
+
+3. **Event History Pagination & Safe Sorting (`GET /accounts/{accountId}/audit/events`):**
+   - Paginate account events with sorting restricted strictly to `occurredAt` (`asc` or `desc`).
+   - Automatically apply the deterministic `id` tie-breaker using the same requested direction.
+   - Reject any `eventType` filter; the event timeline must remain complete and unbroken.
+   - Presentation sorting at the API boundary does not alter the canonical event reconstruction
+     order (`occurredAt ASC, id ASC`) used internally for balance replay.
+
+4. **Event-Derived Transaction History Pagination (`GET /accounts/{accountId}/audit/transactions`):**
+   - Support pagination (`page`, `size`) without arbitrary database pagination of events.
+   - Canonical monetary events are loaded first (`occurredAt ASC, id ASC`).
+   - Unique transaction IDs are extracted into a `LinkedHashSet` preserving their first-occurrence order.
+   - Total elements represents the count of unique transactions.
+   - The requested page slice of transaction IDs is computed in memory.
+   - Only transactions for the requested page slice are batch-loaded via
+     `transactionRepository.findAllById(pageTransactionIds)`.
+   - Event-derived chronological ordering is restored for the final page items.
+
+5. **Ledger History Pagination, Sorting, and Filtering (`GET /accounts/{accountId}/audit/ledger`):**
+   - Support pagination (`page`, `size`), sorting allowlisted strictly to `createdAt` (`asc` or `desc`
+     with deterministic `id` tie-breaker), and an optional `entryType` filter (`CREDIT`, `DEBIT`).
+   - Filtering occurs before counting, sorting, and pagination via `findByAccountIdAndEntryType` or
+     `findByAccountId`.
+   - Associated transactions are batch-loaded in bulk via `findAllById`, guaranteeing $O(1)$ query
+     complexity without N+1 repository calls.
+
+6. **Reconstruction-First Audit Trail Pagination (`GET /accounts/{accountId}/audit/trail`):**
+   - Retain the specialized `AuditTrailResponse(accountId, finalBalance, asOf, items, page, size, totalPages, totalElements)`
+     rather than generic `PagedResponse<T>`.
+   - Complete canonical event history (bounded by optional `asOf`) is replayed and reconstructed in memory first.
+   - Running balances are absolute cumulative values, not page-relative.
+   - `finalBalance` reflects the complete reconstructed balance across the full history.
+   - Page slicing of `items` occurs AFTER full running-balance calculation.
+   - Out-of-range pages return HTTP 200 with empty `items`, while retaining correct `finalBalance`,
+     `totalPages`, and `totalElements`.
+   - Reject arbitrary sorting or filtering on the audit trail; chronological event order is an
+     immutable accounting invariant.
+   - Batch loading of transactions and ledger entries avoids N+1 queries.
+
+7. **Centralized Validation & Exception Mapping (`com.ledger.common.validation`):**
+   - Validate pagination parameters via `PaginationValidator` and sort parameters via `SortValidator`.
+   - Validation occurs at the controller boundary before service delegation.
+   - Parameter violations throw `InvalidPageParameterException` and `InvalidSortFieldException`.
+   - Handled centrally in `GlobalExceptionHandler` mapping to HTTP 400 Bad Request returning
+     standard `ApiError` JSON.
+
+### Alternatives Considered
+
+- **Expose Spring Data's `Page<T>` directly:** Rejected because `Page<T>` couples API consumers to
+  Spring Data's internal serialization format and exposes unnecessary metadata fields (`first`, `last`,
+  `numberOfElements`, `sort`, `pageable`).
+- **Use Spring MVC `@PageableDefault Pageable pageable` argument resolver:** Rejected because it
+  bypasses centralized domain validation, permits unvalidated sort property paths that fail with
+  unhandled internal 500 exceptions, and lacks explicit Swagger parameter documentation.
+- **Use `JpaSpecificationExecutor` with dynamic Specifications:** Rejected because the filtering
+  requirements for accounts are bounded and well-defined (status and accountType). Derived query
+  methods provide compile-time safety, avoid Criteria API reflection overhead, and make queries
+  explicit and testable.
+- **Slice the audit trail event query in the database via `LIMIT`/`OFFSET`:** Rejected because running
+  balances cannot be computed without preceding transactions, and `finalBalance` would be corrupted or
+  require separate duplicate queries.
+- **Introduce a global API response envelope (`{ data: ..., meta: ... }`):** Rejected because it adds
+  unnecessary nesting to single-resource endpoints and breaks established Phase 1–7 API contracts.
+
+### Rationale
+
+Separating generic collection pagination (`PagedResponse<T>`) from specialized financial audit trail
+pagination (`AuditTrailResponse`) preserves both API consistency and accounting purity. Financial
+invariants require that running balances and final balances are computed across the full event history,
+while memory and bandwidth constraints require that only requested slices of presentation data are
+transmitted.
+
+Deterministic secondary tie-breakers on `id` eliminate pagination drift without requiring complex
+keyset pagination. Explicit repository queries and strict sort allowlists ensure that database queries
+remain safe, indexed, and predictable.
+
+### Consequences
+
+Positive
+
+- Standardized, predictable pagination across all collection endpoints
+- Complete protection against pagination drift via deterministic `id` tie-breaking
+- Financial running balances and final balances remain absolute, accurate, and explainable
+- Strict sort allowlists prevent SQL injection and property path mapping errors
+- Dynamic filtering for accounts and ledger entries executed before counting/pagination in database
+- Zero N+1 query bottlenecks; bulk batch loading preserved across all audit endpoints
+- Strict public account boundary and `SYS-CASH` isolation preserved across all queries
+- Clean 400 Bad Request error responses with `ApiError` JSON for invalid query parameters
+- Zero schema migrations required
+
+Negative
+
+- Audit trail generation and transaction history derivation require reading the account's historical
+  event sequence into memory before slicing, which scales with event history length (snapshotting
+  in future phases can bound this)
+- Repository contains four explicit query methods rather than dynamic criteria compositions
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

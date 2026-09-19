@@ -263,28 +263,37 @@ Every balance can be fully explained through historical events.
 
 # Phase 8 — API Refinement
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-19**
 
 ## Objective
 
-Improve API quality.
+Improve API quality, predictability, and safety through deterministic pagination, safe sorting, dynamic filtering, and centralized validation.
 
 ## Deliverables
 
-- Pagination
-- Sorting
-- Filtering
-- Consistent responses
-- Validation improvements
-- API documentation review
+- Generic `PagedResponse<T>` pagination DTO (`content`, `page`, `size`, `totalPages`, `totalElements`)
+- Centralized `PaginationConstants` (`DEFAULT_PAGE = 0`, `DEFAULT_SIZE = 20`, `MAX_SIZE = 100`)
+- Centralized `PaginationValidator` (`page >= 0`, `1 <= size <= 100`)
+- Centralized `SortValidator` with strict sort allowlists and automatic deterministic secondary `id` tie-breaker
+- Account API pagination, filtering by `status` and `accountType`, and sorting allowlist (`createdAt`, `accountName`, `accountNumber` ONLY)
+- Four explicit derived query methods in `AccountRepository` excluding `SYS-CASH` without `JpaSpecificationExecutor`
+- Event history pagination and sorting on `occurredAt` with deterministic tie-breaker (no event-type filter)
+- Transaction history pagination derived from canonical event order with unique transaction count and batch loading
+- Audit ledger history pagination, sorting on `createdAt`, and optional `entryType` filter
+- Audit trail pagination over fully reconstructed history with absolute running balances and `finalBalance` retention
+- Centralized validation exceptions (`InvalidPageParameterException`, `InvalidSortFieldException`) returning standard `ApiError` 400
 
 ## Success Criteria
 
-REST APIs are stable, consistent, and production-ready.
+All collection endpoints support deterministic, drift-free pagination, bounded sorting, and filtering while preserving double-entry accounting invariants and event-derived reconstruction.
+
+`mvn clean test` — **209 tests, 0 failures, BUILD SUCCESS**
 
 ---
 
 # Phase 9 — Testing & Hardening
+
+**Status: NEXT**
 
 ## Objective
 
@@ -337,7 +346,7 @@ Backend reaches production-quality standards.
 | M6 | Transfer Engine Complete |
 | M7 | Balance Replay Complete |
 | M8 | Audit Module Complete |
-| M9 | Stable REST API |
+| M9 | Stable REST API Complete |
 | M10 | Backend v1.0 |
 
 ---

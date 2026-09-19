@@ -804,7 +804,82 @@ count. No database queries occur inside per-record iteration loops:
 
 ---
 
-# 18. Future Architecture Evolution
+# 18. Phase 8 — API Refinement, Deterministic Pagination, Sorting, and Filtering Architecture
+
+Phase 8 introduces production-grade pagination, sorting, filtering, and centralized validation across all
+collection endpoints in the system. The architecture guarantees deterministic ordering, eliminates pagination
+drift, and enforces that financial reconstruction and accounting invariants are never compromised by
+presentation slicing.
+
+```
+Client Request (GET /accounts, /audit/events, /audit/transactions, /audit/ledger, /audit/trail)
+      │
+      ▼
+Presentation Layer: Controllers
+ - Boundary validation via PaginationValidator (page >= 0, 1 <= size <= 100)
+ - Boundary validation via SortValidator (strict field allowlists, asc/desc)
+ - Automatic deterministic secondary sort on 'id' using requested direction
+      │
+      ▼
+Application Layer: Services
+ ├── GET /accounts:
+ │    - Dynamic filtering (status, accountType, or both) applied in SQL before count/sort/pagination
+ │    - Excludes SYS-CASH across all queries
+ │    - Returns PagedResponse<AccountResponse>
+ ├── GET /audit/events:
+ │    - Repository-level pagination and sorting strictly allowlisted to occurredAt
+ │    - Presentation sorting decoupled from canonical reconstruction order
+ │    - Returns PagedResponse<AccountEventResponse>
+ ├── GET /audit/transactions:
+ │    - Loads canonical events first (occurredAt ASC, id ASC)
+ │    - Derives unique transaction IDs preserving first-occurrence order
+ │    - In-memory pagination slicing of transaction IDs
+ │    - Batch-loads only the requested page slice via findAllById (O(1) queries)
+ │    - Returns PagedResponse<AccountTransactionResponse>
+ ├── GET /audit/ledger:
+ │    - Repository-level pagination and sorting allowlisted to createdAt
+ │    - Optional entryType filter applied before count/sort/pagination
+ │    - Batch-loads associated transactions via findAllById (O(1) queries)
+ │    - Returns PagedResponse<AccountLedgerEntryResponse>
+ └── GET /audit/trail:
+      - Full event history replayed and reconstructed in memory first
+      - Cumulative running balances calculated across complete history
+      - finalBalance derived from full history (unaffected by page)
+      - Slices items only AFTER complete reconstruction
+      - Valid out-of-range pages return HTTP 200 with empty items: []
+      - Retains specialized AuditTrailResponse DTO
+      │
+      ▼
+Persistence Layer & Repositories
+ - AccountRepository: 4 explicit derived query methods (no JpaSpecificationExecutor)
+ - EventRepository: Pageable findByAccountId
+ - LedgerEntryRepository: Pageable findByAccountId and findByAccountIdAndEntryType
+ - TransactionRepository: Bulk batch-loading via findAllById
+```
+
+## Architectural Invariants & Guarantees
+
+1. **Reconstruction Precedes Presentation Slicing:**  
+   In the financial audit trail, calculating running balances and `finalBalance` requires replaying the complete
+   historical sequence. Slicing occurs strictly after full reconstruction, ensuring running balances are absolute
+   and truthful rather than page-relative artifacts.
+2. **Deterministic Secondary Sorting:**  
+   Sort parameters automatically append a secondary tie-breaker on `id` in the same requested direction,
+   eliminating pagination drift without relying on database-specific cursor mechanisms.
+3. **Explicit Query Derivation over Dynamic Specifications:**  
+   Account queries use four explicit derived repository methods (`findAllByAccountNumberNot...`) rather than
+   `JpaSpecificationExecutor`, maintaining compile-time type safety, zero Criteria API overhead, and explicit
+   query verification.
+4. **Decoupled Canonical Order vs. Presentation Sorting:**  
+   Allowing clients to sort event history (`occurredAt ASC` or `DESC`) affects only presentation layout; internal
+   balance reconstruction always uses canonical `occurredAt ASC, id ASC` ordering.
+5. **Constant-Query Complexity ($O(1)$ Database Calls):**  
+   Batch loading of transactions and ledger entries is maintained across paginated slices, preventing N+1 query
+   proliferation.
+
+---
+
+# 19. Future Architecture Evolution
 
 The current architecture intentionally focuses on a single-service implementation.
 
@@ -825,7 +900,7 @@ These enhancements should extend the existing architecture rather than replace i
 
 ---
 
-# 19. Guiding Philosophy
+# 20. Guiding Philosophy
 
 > **\"Financial systems should preserve history, not overwrite it.\"**
 

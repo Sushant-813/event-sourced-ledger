@@ -950,4 +950,141 @@ Phase 7 intentionally does NOT contain:
 
 Next Milestone
 
-Phase 8 — API Refinement
+Phase 8 — API Refinement
+
+---
+
+## 2026-09-19
+
+### Phase 8 — API Refinement: COMPLETED
+
+Phase 8 has been implemented and verified. This phase introduces production-grade pagination,
+sorting, and filtering across all collection endpoints in the system, enforces deterministic
+drift-free sorting, centralizes request parameter validation, and refines response structures
+while maintaining accounting invariants and event-derived ordering.
+
+#### What Was Implemented
+
+**Generic Pagination Framework (`com.ledger.common`)**
+
+- `PagedResponse<T>` record (`com.ledger.common.dto`):
+  - Standardized immutable response container: `content` (`List<T>`), `page` (`int`), `size` (`int`),
+    `totalPages` (`int`), `totalElements` (`long`).
+  - Used across all collection endpoints (excluding the specialized audit trail response).
+- `PaginationConstants` (`com.ledger.common.pagination`):
+  - Centralized defaults: `DEFAULT_PAGE = 0`, `DEFAULT_SIZE = 20`, `MAX_SIZE = 100`.
+- `PaginationValidator` (`com.ledger.common.validation`):
+  - Enforces `page >= 0`, `size >= 1`, `size <= 100`. Throws `InvalidPageParameterException` on violation.
+- `SortValidator` (`com.ledger.common.validation`):
+  - Enforces allowlisted sort field sets and valid sort directions (`asc`, `desc`, case-insensitive).
+  - Throws `InvalidSortFieldException` on violation.
+  - Automatically appends a secondary deterministic tie-breaker on `id` using the identical requested
+    sort direction (`Sort.by(direction, sortBy).and(Sort.by(direction, "id"))`).
+
+**Account Module Refinement (`com.ledger.account`)**
+
+- `AccountController.getAllAccounts` updated to support:
+  - Pagination parameters: `page` (default 0), `size` (default 20, max 100).
+  - Sorting parameters: `sortBy` (default `createdAt`), `direction` (default `asc`).
+  - Strict sort allowlist: `createdAt`, `accountName`, `accountNumber` ONLY. (`status` and `accountType`
+    are rejected if supplied as sort fields).
+  - Filtering parameters: optional `status` (`AccountStatus`), optional `accountType` (`AccountType`).
+  - Validation executed at controller boundary before service delegation.
+  - Returns `PagedResponse<AccountResponse>`.
+- `AccountServiceImpl.getAllAccounts` updated to execute pagination, sorting, and filtering:
+  - Filters are applied in SQL before counting, sorting, and pagination.
+  - Excludes `SYS-CASH` across all queries.
+- `AccountRepository` extended with four explicit derived query methods:
+  - `findAllByAccountNumberNot(String accountNumber, Pageable pageable)`
+  - `findAllByAccountNumberNotAndStatus(String accountNumber, AccountStatus status, Pageable pageable)`
+  - `findAllByAccountNumberNotAndAccountType(String accountNumber, AccountType accountType, Pageable pageable)`
+  - `findAllByAccountNumberNotAndStatusAndAccountType(String accountNumber, AccountStatus status, AccountType accountType, Pageable pageable)`
+  - No `JpaSpecificationExecutor` used; queries remain compile-time verified and predictable.
+
+**Audit Module Refinement (`com.ledger.audit`)**
+
+- `AuditController` and `AuditServiceImpl` updated across all collection endpoints:
+  - **Event History (`GET /accounts/{accountId}/audit/events`):**
+    - Paginated via `page` and `size`.
+    - Sorting strictly allowlisted to `occurredAt` (`asc`/`desc`) with deterministic `id` tie-breaker.
+    - No `eventType` filter (preserves complete event timeline).
+    - Presentation sorting does not affect canonical event reconstruction order.
+    - Returns `PagedResponse<AccountEventResponse>`.
+  - **Transaction History (`GET /accounts/{accountId}/audit/transactions`):**
+    - Paginated via `page` and `size`.
+    - Loads canonical events first (`occurredAt ASC, id ASC`).
+    - Derives unique transaction IDs preserving first-occurrence order into a `LinkedHashSet`.
+    - Total elements reflects count of unique transactions.
+    - Slices transaction IDs for the requested page in memory; batch-loads only the requested slice via
+      `transactionRepository.findAllById`.
+    - Restores chronological first-occurrence ordering.
+    - Returns `PagedResponse<AccountTransactionResponse>`.
+  - **Ledger History (`GET /accounts/{accountId}/audit/ledger`):**
+    - Paginated via `page` and `size`.
+    - Sorting strictly allowlisted to `createdAt` (`asc`/`desc`) with deterministic `id` tie-breaker.
+    - Optional `entryType` filter (`CREDIT`, `DEBIT`) applied before counting/sorting/pagination.
+    - Batch-loads associated transactions via `findAllById` ($O(1)$ queries, no N+1).
+    - Returns `PagedResponse<AccountLedgerEntryResponse>`.
+  - **Audit Trail (`GET /accounts/{accountId}/audit/trail`):**
+    - Paginated via `page` and `size` alongside optional `asOf` timestamp.
+    - Retains specialized `AuditTrailResponse` (`accountId`, `finalBalance`, `asOf`, `items`, `page`,
+      `size`, `totalPages`, `totalElements`).
+    - Canonical event history up to `asOf` is fully replayed and reconstructed in memory first.
+    - Running balances are absolute cumulative values, not page-relative.
+    - `finalBalance` is computed over the full reconstructed history.
+    - Page slicing occurs AFTER complete reconstruction.
+    - Out-of-range page requests return HTTP 200 with empty `items`, while retaining correct
+      `finalBalance`, `totalPages`, and `totalElements`.
+    - Arbitrary sorting and filtering are rejected to protect chronological accounting integrity.
+    - Batch loading of transactions and ledger entries avoids N+1 database queries.
+
+**Centralized Exception Handling & Validation (`com.ledger.common.exception`)**
+
+- Introduced `InvalidPageParameterException` and `InvalidSortFieldException`.
+- Extended `GlobalExceptionHandler` with handlers for both exceptions, returning standard `400 Bad Request`
+  `ApiError` JSON.
+- Valid out-of-range page requests (e.g. `page = 999`) return HTTP 200 with empty content/items list,
+  conforming to standard REST pagination semantics.
+
+**Repository Layer Enhancements**
+
+- `AccountRepository`: Added 4 derived query methods supporting pagination and filtering while excluding `SYS-CASH`.
+- `EventRepository`: Added `Page<Event> findByAccountId(Long accountId, Pageable pageable)`.
+- `LedgerEntryRepository`: Added `Page<LedgerEntry> findByAccountId(Long accountId, Pageable pageable)` and
+  `Page<LedgerEntry> findByAccountIdAndEntryType(Long accountId, EntryType entryType, Pageable pageable)`.
+
+#### Testing & Verification
+
+Comprehensive unit, controller, and integration tests were added and expanded across all modified modules:
+- `AccountServiceImplTest` expanded from 17 to **22 tests** (added pagination, status filtering, accountType filtering, combined filtering, invalid sort/page validation).
+- `AccountControllerTest` expanded from 14 to **27 tests** (added MockMvc tests for pagination defaults, custom page/size, sort field/direction validation, status/type filters, 400 Bad Request on invalid page/size/sort).
+- `AuditServiceImplTest` expanded from 17 to **33 tests** (added pagination and sorting for event history, transaction history in-memory pagination with batch loading, ledger history pagination/sorting/filtering, audit trail reconstruction with pagination slicing, out-of-range page handling, and validation error propagation).
+- `AuditControllerTest` expanded from 10 to **32 tests** (added MockMvc tests for paginated `/events`, `/transactions`, `/ledger`, `/trail`, invalid page parameter errors, invalid sort field/direction errors, ledger entryType filtering, out-of-range page responses).
+
+#### Verification Result
+
+```
+mvn clean test
+Tests run: 209, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+Full suite passing: 153 existing tests + 56 new Phase 8 tests = **209 total tests**.
+
+#### Architectural Boundary
+
+Phase 8 intentionally does NOT contain:
+
+- Global API response envelopes (no `{ data: ..., meta: ... }` wrappers; resource-oriented records maintained)
+- Database schema changes or new Flyway migrations (zero DDL required; schema remains at version 5)
+- Spring Data JPA `JpaSpecificationExecutor` (relies on explicit, compile-time verified repository methods)
+- Event-type filtering on event history (event stream completeness preserved)
+- Arbitrary sorting or filtering on audit trail (chronological running balance invariant preserved)
+- Modifications to core transaction processing or balance reconstruction algorithms
+
+#### New ADRs Recorded
+
+- ADR-029: Deterministic Pagination, Safe Sorting, Dynamic Filtering, and Specialized Audit Serialization
+
+Next Milestone
+
+Phase 9 — Testing & Hardening

@@ -5,19 +5,40 @@ import com.ledger.audit.dto.AccountLedgerEntryResponse;
 import com.ledger.audit.dto.AccountTransactionResponse;
 import com.ledger.audit.dto.AuditBalanceResponse;
 import com.ledger.audit.dto.AuditTrailResponse;
+import com.ledger.common.dto.PagedResponse;
+import com.ledger.ledger.entity.EntryType;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 
 public interface AuditService {
 
-    List<AccountEventResponse> getEventHistory(Long accountId);
+    PagedResponse<AccountEventResponse> getEventHistory(
+            Long accountId,
+            int page,
+            int size,
+            String sortBy,
+            String direction);
 
-    List<AccountTransactionResponse> getTransactionHistory(Long accountId);
+    PagedResponse<AccountTransactionResponse> getTransactionHistory(
+            Long accountId,
+            int page,
+            int size);
 
-    List<AccountLedgerEntryResponse> getLedgerHistory(Long accountId);
+    PagedResponse<AccountLedgerEntryResponse> getLedgerHistory(
+            Long accountId,
+            int page,
+            int size,
+            String sortBy,
+            String direction,
+            EntryType entryType);
 
-    AuditBalanceResponse getBalance(Long accountId, OffsetDateTime asOf);
+    AuditBalanceResponse getBalance(
+            Long accountId,
+            OffsetDateTime asOf);
 
-    AuditTrailResponse getAuditTrail(Long accountId, OffsetDateTime asOf);
+    AuditTrailResponse getAuditTrail(
+            Long accountId,
+            OffsetDateTime asOf,
+            int page,
+            int size);
 }
