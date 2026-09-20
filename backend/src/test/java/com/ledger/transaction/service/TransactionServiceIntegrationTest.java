@@ -14,6 +14,7 @@ import com.ledger.transaction.entity.Transaction;
 import com.ledger.transaction.entity.TransactionStatus;
 import com.ledger.transaction.exception.InsufficientFundsException;
 import com.ledger.transaction.repository.TransactionRepository;
+import com.ledger.account.exception.AccountNotFoundException;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -1540,5 +1541,716 @@ class TransactionServiceIntegrationTest {
 
                 assertTrue(
                                 systemAccount.getId() != null);
+        }
+
+        @Test
+        void directOperationsOnSystemCashAccount_areRejected() {
+
+                // Arrange
+                Account systemCash = accountRepository
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
+                                .orElseThrow();
+
+                Account customerAccount = createTestAccount();
+
+                BigDecimal amount = new BigDecimal("100.00");
+
+                // Act & Assert - Deposit directly into SYS-CASH
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.deposit(
+                                                systemCash.getId(),
+                                                new DepositRequest(amount)));
+
+                // Act & Assert - Withdraw directly from SYS-CASH
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.withdraw(
+                                                systemCash.getId(),
+                                                new WithdrawalRequest(amount)));
+
+                // Act & Assert - SYS-CASH as transfer source
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.transfer(
+                                                new TransferRequest(
+                                                                systemCash.getId(),
+                                                                customerAccount.getId(),
+                                                                amount)));
+
+                // Act & Assert - SYS-CASH as transfer destination
+                assertThrows(
+                                AccountNotFoundException.class,
+                                () -> transactionService.transfer(
+                                                new TransferRequest(
+                                                                customerAccount.getId(),
+                                                                systemCash.getId(),
+                                                                amount)));
+        }
+
+        @Test
+        void allCompletedTransactionsMaintainDoubleEntryInvariant() {
+
+                // Arrange
+                Account firstAccount = createTestAccount();
+                Account secondAccount = createTestAccount();
+
+                // Initial funding
+                transactionService.deposit(
+                                firstAccount.getId(),
+                                new DepositRequest(new BigDecimal("500.00")));
+
+                transactionService.deposit(
+                                secondAccount.getId(),
+                                new DepositRequest(new BigDecimal("300.00")));
+
+                // Withdrawal
+                transactionService.withdraw(
+                                firstAccount.getId(),
+                                new WithdrawalRequest(new BigDecimal("100.00")));
+
+                // Transfer
+                transactionService.transfer(
+                                new TransferRequest(
+                                                firstAccount.getId(),
+                                                secondAccount.getId(),
+                                                new BigDecimal("150.00")));
+
+                // Act
+                List<Long> unbalancedTransactions = jdbcTemplate.queryForList(
+                                """
+                                                SELECT transaction_id
+                                                FROM ledger_entries
+                                                GROUP BY transaction_id
+                                                HAVING SUM(
+                                                    CASE
+                                                        WHEN entry_type = 'DEBIT'
+                                                            THEN amount
+                                                        WHEN entry_type = 'CREDIT'
+                                                            THEN -amount
+                                                        ELSE 0
+                                                    END
+                                                ) <> 0
+                                                """,
+                                Long.class);
+
+                // Assert
+                assertTrue(
+                                unbalancedTransactions.isEmpty(),
+                                "Every completed transaction must have equal debit and credit totals");
+        }
+
+        @Test
+        void depositAndWithdrawalMaintainCustomerSystemCashSymmetry() {
+
+                // Arrange
+                Account account = createTestAccount();
+
+                Account systemCash = accountRepository
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
+                                .orElseThrow();
+
+                BigDecimal depositAmount = new BigDecimal("200.00");
+                BigDecimal withdrawalAmount = new BigDecimal("75.00");
+
+                BigDecimal customerBalanceBefore = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                account.getId());
+
+                BigDecimal systemCashBalanceBefore = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                systemCash.getId());
+
+                // Act
+                transactionService.deposit(
+                                account.getId(),
+                                new DepositRequest(depositAmount));
+
+                transactionService.withdraw(
+                                account.getId(),
+                                new WithdrawalRequest(withdrawalAmount));
+
+                // Assert
+                BigDecimal customerBalanceAfter = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                account.getId());
+
+                BigDecimal systemCashBalanceAfter = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                systemCash.getId());
+
+                BigDecimal expectedCustomerDelta = depositAmount.subtract(withdrawalAmount);
+
+                BigDecimal expectedSystemCashDelta = expectedCustomerDelta.negate();
+
+                BigDecimal actualCustomerDelta = customerBalanceAfter.subtract(customerBalanceBefore);
+
+                BigDecimal actualSystemCashDelta = systemCashBalanceAfter.subtract(systemCashBalanceBefore);
+
+                assertEquals(
+                                0,
+                                expectedCustomerDelta.compareTo(actualCustomerDelta),
+                                "Customer balance delta must equal deposits minus withdrawals");
+
+                assertEquals(
+                                0,
+                                expectedSystemCashDelta.compareTo(actualSystemCashDelta),
+                                "SYS-CASH delta must be exactly opposite to customer balance delta");
+        }
+
+        @Test
+        void transferConservesValue() {
+
+                // Arrange
+                Account sourceAccount = createTestAccount();
+                Account destinationAccount = createTestAccount();
+
+                BigDecimal initialSourceBalance = new BigDecimal("500.00");
+                BigDecimal transferAmount = new BigDecimal("175.00");
+
+                transactionService.deposit(
+                                sourceAccount.getId(),
+                                new DepositRequest(initialSourceBalance));
+
+                Account systemCash = accountRepository
+                                .findByAccountNumber(
+                                                SystemAccountConstants.SYSTEM_CASH_ACCOUNT_NUMBER)
+                                .orElseThrow();
+
+                BigDecimal sourceBalanceBefore = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                sourceAccount.getId());
+
+                BigDecimal destinationBalanceBefore = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                destinationAccount.getId());
+
+                BigDecimal systemCashBalanceBefore = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                systemCash.getId());
+
+                BigDecimal totalCustomerValueBefore = sourceBalanceBefore.add(destinationBalanceBefore);
+
+                // Act
+                transactionService.transfer(
+                                new TransferRequest(
+                                                sourceAccount.getId(),
+                                                destinationAccount.getId(),
+                                                transferAmount));
+
+                // Assert
+                BigDecimal sourceBalanceAfter = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                sourceAccount.getId());
+
+                BigDecimal destinationBalanceAfter = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                destinationAccount.getId());
+
+                BigDecimal systemCashBalanceAfter = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                systemCash.getId());
+
+                BigDecimal totalCustomerValueAfter = sourceBalanceAfter.add(destinationBalanceAfter);
+
+                // Source loses exactly the transferred amount
+                assertEquals(
+                                0,
+                                sourceBalanceBefore
+                                                .subtract(transferAmount)
+                                                .compareTo(sourceBalanceAfter),
+                                "Source account must decrease by exactly the transfer amount");
+
+                // Destination gains exactly the transferred amount
+                assertEquals(
+                                0,
+                                destinationBalanceBefore
+                                                .add(transferAmount)
+                                                .compareTo(destinationBalanceAfter),
+                                "Destination account must increase by exactly the transfer amount");
+
+                // Total customer value is conserved
+                assertEquals(
+                                0,
+                                totalCustomerValueBefore.compareTo(totalCustomerValueAfter),
+                                "Transfer must conserve total customer value");
+
+                // SYS-CASH must not participate in customer-to-customer transfers
+                assertEquals(
+                                0,
+                                systemCashBalanceBefore.compareTo(systemCashBalanceAfter),
+                                "SYS-CASH balance must remain unchanged during a customer transfer");
+        }
+
+        @Test
+        void concurrentDeposits_allSucceedAndBalanceIsCorrect() throws Exception {
+
+                // Arrange
+                Account account = createTestAccount();
+
+                BigDecimal depositAmount = new BigDecimal("20.00");
+
+                int threadCount = 5;
+
+                ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+                CountDownLatch startLatch = new CountDownLatch(1);
+
+                List<Future<TransactionResponse>> attempts = new ArrayList<>();
+
+                for (int i = 0; i < threadCount; i++) {
+
+                        attempts.add(
+                                        executor.submit(() -> {
+
+                                                startLatch.await();
+
+                                                return transactionService.deposit(
+                                                                account.getId(),
+                                                                new DepositRequest(depositAmount));
+                                        }));
+                }
+
+                // Act
+                startLatch.countDown();
+
+                List<TransactionResponse> successfulDeposits = new ArrayList<>();
+
+                try {
+
+                        for (Future<TransactionResponse> attempt : attempts) {
+
+                                successfulDeposits.add(
+                                                attempt.get());
+                        }
+
+                } finally {
+
+                        executor.shutdown();
+                }
+
+                // Assert - all deposits succeeded
+                assertEquals(
+                                threadCount,
+                                successfulDeposits.size());
+
+                // Assert - every transaction completed
+                for (TransactionResponse response : successfulDeposits) {
+
+                        assertEquals(
+                                        TransactionStatus.COMPLETED,
+                                        response.status());
+
+                        assertEquals(
+                                        account.getId(),
+                                        response.accountId());
+
+                        assertEquals(
+                                        0,
+                                        response.amount()
+                                                        .compareTo(depositAmount));
+                }
+
+                // Assert - final reconstructed balance
+                BigDecimal finalBalance = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                account.getId());
+
+                BigDecimal expectedBalance = depositAmount.multiply(
+                                BigDecimal.valueOf(threadCount));
+
+                assertEquals(
+                                0,
+                                finalBalance.compareTo(expectedBalance),
+                                "Concurrent deposits must produce the expected final balance");
+
+                // Assert - each deposit creates exactly two ledger entries
+                for (TransactionResponse response : successfulDeposits) {
+
+                        Integer ledgerEntryCount = jdbcTemplate.queryForObject(
+                                        """
+                                                        SELECT COUNT(*)
+                                                        FROM ledger_entries
+                                                        WHERE transaction_id = ?
+                                                        """,
+                                        Integer.class,
+                                        response.transactionId());
+
+                        assertEquals(
+                                        2,
+                                        ledgerEntryCount,
+                                        "Each deposit transaction must create exactly two ledger entries");
+                }
+        }
+
+        @Test
+        void concurrentDepositsAndWithdrawals_balanceNeverGoesNegative() throws Exception {
+
+                // Arrange
+                Account account = createTestAccount();
+
+                BigDecimal initialBalance = new BigDecimal("100.00");
+                BigDecimal operationAmount = new BigDecimal("20.00");
+
+                // Establish enough initial balance for several concurrent withdrawals.
+                transactionService.deposit(
+                                account.getId(),
+                                new DepositRequest(initialBalance));
+
+                int depositCount = 5;
+                int withdrawalCount = 10;
+
+                int threadCount = depositCount + withdrawalCount;
+
+                ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+                CountDownLatch startLatch = new CountDownLatch(1);
+
+                List<Future<TransactionResponse>> depositAttempts = new ArrayList<>();
+
+                List<Future<TransactionResponse>> withdrawalAttempts = new ArrayList<>();
+
+                // Concurrent deposits
+                for (int i = 0; i < depositCount; i++) {
+
+                        depositAttempts.add(
+                                        executor.submit(() -> {
+
+                                                startLatch.await();
+
+                                                return transactionService.deposit(
+                                                                account.getId(),
+                                                                new DepositRequest(operationAmount));
+                                        }));
+                }
+
+                // Concurrent withdrawals
+                for (int i = 0; i < withdrawalCount; i++) {
+
+                        withdrawalAttempts.add(
+                                        executor.submit(() -> {
+
+                                                startLatch.await();
+
+                                                return transactionService.withdraw(
+                                                                account.getId(),
+                                                                new WithdrawalRequest(operationAmount));
+                                        }));
+                }
+
+                // Act
+                startLatch.countDown();
+
+                List<TransactionResponse> successfulDeposits = new ArrayList<>();
+
+                List<TransactionResponse> successfulWithdrawals = new ArrayList<>();
+
+                int insufficientFundsFailures = 0;
+
+                try {
+
+                        for (Future<TransactionResponse> attempt : depositAttempts) {
+
+                                successfulDeposits.add(
+                                                attempt.get());
+                        }
+
+                        for (Future<TransactionResponse> attempt : withdrawalAttempts) {
+
+                                try {
+
+                                        successfulWithdrawals.add(
+                                                        attempt.get());
+
+                                } catch (java.util.concurrent.ExecutionException ex) {
+
+                                        if (ex.getCause() instanceof InsufficientFundsException) {
+
+                                                insufficientFundsFailures++;
+
+                                        } else {
+
+                                                throw ex;
+                                        }
+                                }
+                        }
+
+                } finally {
+
+                        executor.shutdown();
+                }
+
+                // Assert - every deposit succeeded
+                assertEquals(
+                                depositCount,
+                                successfulDeposits.size());
+
+                // Assert - withdrawals either succeed or fail only because of
+                // insufficient funds.
+                assertEquals(
+                                withdrawalCount,
+                                successfulWithdrawals.size()
+                                                + insufficientFundsFailures);
+
+                // Assert - every successful deposit completed
+                for (TransactionResponse response : successfulDeposits) {
+
+                        assertEquals(
+                                        TransactionStatus.COMPLETED,
+                                        response.status());
+
+                        assertEquals(
+                                        0,
+                                        response.amount()
+                                                        .compareTo(operationAmount));
+                }
+
+                // Assert - every successful withdrawal completed
+                for (TransactionResponse response : successfulWithdrawals) {
+
+                        assertEquals(
+                                        TransactionStatus.COMPLETED,
+                                        response.status());
+
+                        assertEquals(
+                                        0,
+                                        response.amount()
+                                                        .compareTo(operationAmount));
+                }
+
+                // Assert - final balance can never be negative
+                BigDecimal finalBalance = jdbcTemplate.queryForObject(
+                                """
+                                                SELECT COALESCE(
+                                                    SUM(
+                                                        CASE
+                                                            WHEN entry_type = 'CREDIT'
+                                                                THEN amount
+                                                            WHEN entry_type = 'DEBIT'
+                                                                THEN -amount
+                                                        END
+                                                    ),
+                                                    0
+                                                )
+                                                FROM ledger_entries
+                                                WHERE account_id = ?
+                                                """,
+                                BigDecimal.class,
+                                account.getId());
+
+                assertTrue(
+                                finalBalance.compareTo(BigDecimal.ZERO) >= 0,
+                                "Concurrent operations must never produce a negative balance");
+
+                // Assert - final balance matches the successful operations
+                BigDecimal expectedBalance = initialBalance
+                                .add(
+                                                operationAmount.multiply(
+                                                                BigDecimal.valueOf(
+                                                                                successfulDeposits.size())))
+                                .subtract(
+                                                operationAmount.multiply(
+                                                                BigDecimal.valueOf(
+                                                                                successfulWithdrawals.size())));
+
+                assertEquals(
+                                0,
+                                finalBalance.compareTo(expectedBalance),
+                                "Final balance must reflect only successfully completed operations");
+
+                // Assert - every successful operation is double-entry balanced
+                List<Long> successfulTransactionIds = new ArrayList<>();
+
+                successfulDeposits.forEach(
+                                response -> successfulTransactionIds.add(
+                                                response.transactionId()));
+
+                successfulWithdrawals.forEach(
+                                response -> successfulTransactionIds.add(
+                                                response.transactionId()));
+
+                for (Long transactionId : successfulTransactionIds) {
+
+                        Integer ledgerEntryCount = jdbcTemplate.queryForObject(
+                                        """
+                                                        SELECT COUNT(*)
+                                                        FROM ledger_entries
+                                                        WHERE transaction_id = ?
+                                                        """,
+                                        Integer.class,
+                                        transactionId);
+
+                        assertEquals(
+                                        2,
+                                        ledgerEntryCount,
+                                        "Every successful transaction must contain exactly two ledger entries");
+                }
         }
 }

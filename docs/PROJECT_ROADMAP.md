@@ -293,28 +293,32 @@ All collection endpoints support deterministic, drift-free pagination, bounded s
 
 # Phase 9 — Testing & Hardening
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-21**
 
 ## Objective
 
-Improve reliability and code quality.
+Improve reliability, financial correctness, defensive validation, and concurrency safety.
 
 ## Deliverables
 
-- Unit tests
-- Integration tests
-- Business rule validation
-- Error handling verification
-- Performance review
-- Documentation updates
+- P0: Core financial invariant verification (double-entry equilibrium, value conservation, deposit/withdrawal symmetry, replay parity)
+- P1: REST API validation & business rule hardening (fractional cents rejection, error mapping uniformity, strict SYS-CASH isolation)
+- Defensive validation at `LedgerService` boundary (transaction nullity, collection integrity, element reference match, debit/credit presence and balance)
+- P2: Concurrency & thread safety verification (concurrent withdrawals with overdraft prevention, concurrent deposits, bidirectional deadlock-free transfers, mixed operations)
+- Integration test suite expansion (`AccountServiceIntegrationTest`, `LedgerServiceIntegrationTest`, `AuditServiceIntegrationTest`, `TransactionServiceSysCashIntegrationTest`)
+- Technical documentation updates
 
 ## Success Criteria
 
-Critical financial workflows are fully tested.
+All critical financial workflows, accounting invariants, defensive service boundaries, and concurrent transaction execution are comprehensively tested against real PostgreSQL persistence.
+
+`mvn clean test` — **244 tests, 0 failures, BUILD SUCCESS**
 
 ---
 
 # Phase 10 — Backend v1.0 Release
+
+**Status: NEXT**
 
 ## Objective
 

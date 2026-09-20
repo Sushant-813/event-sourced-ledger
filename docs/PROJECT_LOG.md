@@ -1085,6 +1085,78 @@ Phase 8 intentionally does NOT contain:
 
 - ADR-029: Deterministic Pagination, Safe Sorting, Dynamic Filtering, and Specialized Audit Serialization
 
+---
+
+## 2026-09-21
+
+### Phase 9 — Testing & Hardening: COMPLETED
+
+Phase 9 focused on comprehensive hardening, edge-case coverage, financial invariant validation, defensive service boundary checks, and concurrent transaction safety across the entire backend.
+
+#### What Was Hardened & Verified
+
+**P0: Core Financial Correctness & Accounting Invariants**
+- **Double-Entry Equilibrium:** Verified across all transactions that sum of debits equals sum of credits (`debitTotal == creditTotal`). Added database-level aggregation assertions confirming the global invariant across the entire `ledger_entries` table.
+- **Value Conservation:** Verified that funds transferred between accounts conserve value precisely without leakage or creation (`sourceBalanceAfter + targetBalanceAfter == sourceBalanceBefore + targetBalanceBefore`).
+- **Deposit / Withdrawal Symmetry:** Verified that deposits credit customer accounts and debit `SYS-CASH`, while withdrawals debit customer accounts and credit `SYS-CASH`, preserving exact net zero system-wide balance.
+- **Balance Reconstruction vs. Event Stream Replay:** Verified that balance reconstruction derived from ledger entries matches independent event stream replay.
+- **Deterministic Historical Reconstruction:** Verified boundary semantics for point-in-time balance reconstruction (`asOf`) with deterministic ordering (`occurred_at ASC, id ASC`).
+
+**P1: API & Business-Rule Hardening**
+- **Monetary Precision & Boundary Enforcement:** Verified that fractional-cent amounts (`100.001`, `50.005`, `25.999`) and zero or negative amounts are rejected at the REST API boundary via Jakarta Validation (`@Digits(integer = 12, fraction = 2)`, `@Positive`) with HTTP 400 Bad Request.
+- **System Account (`SYS-CASH`) Isolation:** Rigorously verified that `SYS-CASH` is strictly isolated across all public endpoints and services:
+  - Cannot be used as transfer source or destination (rejected with HTTP 422 `InvalidAccountStatusException` / `AccountNotEligibleException`).
+  - Cannot be queried via `GET /accounts/{id}` or audit endpoints (`/events`, `/transactions`, `/ledger`, `/balance`, `/trail`), returning HTTP 404 Not Found.
+  - Excluded from all paginated and filtered account listings.
+  - Excluded from public balance reconstruction (`reconstructCurrentBalance` and `reconstructBalanceAt` reject `SYS-CASH` ID with `AccountNotEligibleException`).
+- **Business Rule Rejections:** Tested rejections for non-existent accounts (404), transfers between the same account (422), transfers/withdrawals with insufficient funds (422), and transactions against `FROZEN` or `CLOSED` accounts (422).
+- **Error Response Uniformity:** Verified that malformed JSON payloads, type mismatches, missing fields, and custom business exceptions consistently return the standardized `ApiError` format.
+
+**LedgerService Defensive Hardening (`com.ledger.ledger.service.LedgerServiceImpl`)**
+- Defensive validation was strengthened at the service boundary to strictly reject corrupt or mismatched inputs before database interaction:
+  - `null` transaction rejected with `IllegalArgumentException`.
+  - `null` or empty ledger entry collections rejected with `IllegalArgumentException`.
+  - `null` elements within the ledger entry collection rejected with `InvalidLedgerEntryException`.
+  - Entries referencing a different transaction than the transaction parameter rejected with `InvalidLedgerEntryException`.
+  - `null` entry types or non-positive amounts (`amount <= 0`) rejected with `InvalidLedgerEntryException`.
+  - Missing debit or missing credit entries rejected with `UnbalancedLedgerException`.
+  - Imbalanced debit and credit totals rejected with `UnbalancedLedgerException`.
+- Verified with 17 dedicated unit tests (`LedgerServiceImplTest`) and 5 integration tests against PostgreSQL (`LedgerServiceIntegrationTest`).
+
+**P2: Concurrency & Thread-Safety Hardening**
+- Validated pessimistic locking (`SELECT ... FOR UPDATE`) and deterministic lock ordering (`min(id)` then `max(id)`) under high thread concurrency using real PostgreSQL transactions via `CompletableFuture` and `CountDownLatch`:
+  - **Concurrent Withdrawals:** Multiple threads competing for limited balance on a single account; correctly serialized, allowing valid withdrawals up to available balance and failing subsequent attempts with `InsufficientFundsException` without negative balance anomalies.
+  - **Concurrent Deposits:** Multiple concurrent deposits correctly accumulate with exact final balance conservation.
+  - **Concurrent Mixed Deposits and Withdrawals:** Interleaved deposits and withdrawals executed concurrently verify exact conservation: `finalBalance == initialBalance + totalSuccessfulDeposits - totalSuccessfulWithdrawals`.
+  - **Concurrent Bidirectional Transfers:** Opposite-direction transfers between two accounts (A→B and B→A) executed simultaneously without deadlocks due to consistent ascending ID lock acquisition.
+  - **Concurrent Competing Transfers:** Multiple threads transferring from a single source account correctly serialize and prevent overdrafts.
+  - **Concurrent Account Creation:** Verified database uniqueness constraints and clean domain exception translation when duplicate account numbers are submitted concurrently.
+
+**Integration Test Suite Expansion**
+- Added dedicated integration tests operating against PostgreSQL and Flyway schema:
+  - `com.ledger.account.service.AccountServiceIntegrationTest` (10 tests)
+  - `com.ledger.ledger.service.LedgerServiceIntegrationTest` (5 tests)
+  - `com.ledger.audit.service.AuditServiceIntegrationTest` (10 tests)
+  - `com.ledger.transaction.service.TransactionServiceSysCashIntegrationTest` (5 tests)
+  - Expanded `TransactionServiceIntegrationTest` with 5 financial invariant and concurrency tests.
+  - Expanded `BalanceReconstructionServiceIntegrationTest` with tie-breaker and event-stream replay parity tests.
+
+#### Verification Result
+
+```
+mvn clean test
+Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+Full suite passing: 209 existing tests + 35 new Phase 9 tests = **244 total tests**.
+
+#### Architectural Boundary & Deferred Concerns
+
+Phase 9 intentionally does NOT contain:
+- Unnecessary modifications to production code; production changes were strictly limited to defensive validation in `LedgerServiceImpl`.
+- Database schema changes or new Flyway migrations (Flyway schema remains at version 5).
+- Performance optimizations for historical reconstruction or audit loading: loading full history remains $O(\text{history size})$; snapshotting and read-model caching remain deferred to post-v1.0 enhancements as correctness takes precedence over optimization.
+
 Next Milestone
 
-Phase 9 — Testing & Hardening
+Phase 10 — Backend v1.0 Release

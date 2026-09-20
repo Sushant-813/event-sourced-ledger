@@ -29,8 +29,8 @@ alone.
 | Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
 | Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
 | Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
-| Phase 9 | Testing & Hardening | **NEXT** |
-| Phase 10 | Backend v1.0 Release | Pending |
+| Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
+| Phase 10 | Backend v1.0 Release | **NEXT** |
 
 ### Phase 1 — Account Module (completed)
 
@@ -295,6 +295,28 @@ the implementation rationale and full verification record.
 
 ---
 
+### Phase 9 — Testing & Hardening (completed)
+
+Phase 9 completed comprehensive verification, edge-case coverage, financial invariant validation, defensive boundary hardening, and concurrency stress testing:
+
+- **P0 Core Financial Correctness**: Verified double-entry invariant ($\sum \text{debits} = \sum \text{credits}$) globally across database entries; verified exact transfer value conservation; verified customer/`SYS-CASH` deposit and withdrawal symmetry; verified balance reconstruction against independent event stream replay.
+- **P1 API & Business-Rule Hardening**: Enforced rejection of fractional-cent monetary inputs (`@Digits(integer = 12, fraction = 2)`) returning HTTP 400; rigorously tested `SYS-CASH` isolation across all public endpoints (returning 404 on lookups, 422 on transfer attempts, and exclusion from listings and reconstruction); verified uniform `ApiError` responses for validation errors, malformed JSON, and domain exceptions.
+- **LedgerService Defensive Validation**: Hardened `LedgerServiceImpl` to reject null transactions, null/empty entry lists, null entries, mismatched transaction references, null entry types, non-positive amounts, missing debit/credit entries, and imbalanced totals with specific domain exceptions before database interaction.
+- **P2 Concurrency Hardening**: Validated pessimistic row-level locking (`SELECT ... FOR UPDATE`) and deterministic lock ordering under high concurrent thread load against real PostgreSQL; proved overdraft prevention under competing withdrawals, deadlock-free bidirectional transfers, exact balance conservation under interleaved deposits and withdrawals, and concurrent duplicate account rejection.
+- **Integration Test Expansion**: Added dedicated integration tests against real PostgreSQL for Account, Ledger, Audit, and Transaction services (`AccountServiceIntegrationTest`, `LedgerServiceIntegrationTest`, `AuditServiceIntegrationTest`, `TransactionServiceSysCashIntegrationTest`).
+- 35 new tests added (244 total tests across unit, integration, and controller layers).
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+See the [Phase 9 project-log entry](docs/PROJECT_LOG.md) for the full verification record.
+
+---
+
 ## Architecture
 
 ```
@@ -540,8 +562,8 @@ event-sourced-ledger/
 | Phase 6 | Balance Reconstruction | **COMPLETED** (2026-09-08) |
 | Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
 | Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
-| Phase 9 | Testing & Hardening | **NEXT** |
-| Phase 10 | Backend v1.0 Release | Pending |
+| Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
+| Phase 10 | Backend v1.0 Release | **NEXT** |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and
 deliverables.
