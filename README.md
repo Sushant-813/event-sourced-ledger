@@ -9,10 +9,9 @@ that historical record — never stored as the source of truth. This design prio
 correctness, complete auditability, and the ability to reconstruct any past state from history
 alone.
 
-> **Development is incremental.** The event store, ledger processing, deposits, withdrawals,
-> transfers, internal balance reconstruction, audit module, and API refinement are complete
-> through Phase 8. See the [Development Roadmap](#development-roadmap) for completed and
-> upcoming milestones.
+> **Backend v1.0.0 is complete and verified.** All core financial operations, event store,
+> double-entry ledger, balance reconstruction, audit module, API refinement, testing, and release
+> hardening are complete through Phase 10. See the [Development Roadmap](#development-roadmap).
 
 ---
 
@@ -30,7 +29,7 @@ alone.
 | Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
 | Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
-| Phase 10 | Backend v1.0 Release | **NEXT** |
+| Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
 ### Phase 1 — Account Module (completed)
 
@@ -317,6 +316,28 @@ See the [Phase 9 project-log entry](docs/PROJECT_LOG.md) for the full verificati
 
 ---
 
+### Phase 10 — Backend v1.0 Release (completed)
+
+Phase 10 finalized release readiness, code quality, and release metadata preparation for Backend v1.0:
+
+- Completed comprehensive release-readiness audit across architecture, API contracts, schema, and tests (zero functional or blocking defects)
+- Promoted Maven project version to `1.0.0` and OpenAPI documentation version to `v1.0`
+- Centralized pagination constants in `PaginationValidator` to use `PaginationConstants.MAX_SIZE` as single source of truth
+- Added curated OpenAPI / Swagger documentation annotations (`@Tag`, `@Operation`, `@ApiResponses`, `@Parameter`) to `TransactionController` for deposit and withdrawal endpoints
+- Removed dead `Transaction.setStatus()` setter to enforce complete post-construction entity immutability
+- Standardized `TransactionServiceImpl` to standard 4-space indentation
+- Confirmed Flyway schema integrity (`V1`–`V5`) without modification
+- Full test suite verified with zero failures
+
+**Verified result:**
+
+```
+mvn clean test
+Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+---
+
 ## Architecture
 
 ```
@@ -354,12 +375,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural 
 |-----------|------------|---------|
 | Language | Java | 21 (LTS) |
 | Framework | Spring Boot | 3.5.16 |
-| Build Tool | Maven | — |
+| Build Tool | Maven | 1.0.0 |
 | Database | PostgreSQL | — |
 | ORM | Spring Data JPA / Hibernate | — |
 | Schema Migration | Flyway | — |
 | Validation | Jakarta Validation | — |
-| API Documentation | Swagger / OpenAPI 3 (springdoc) | 2.8.13 |
+| API Documentation | Swagger / OpenAPI 3 (springdoc) | v1.0 (springdoc 2.8.13) |
 | Logging | SLF4J / Logback | — |
 | Testing | JUnit 5 / Mockito / Spring Boot Test | — |
 
@@ -481,30 +502,34 @@ mvn clean test
 
 ## Testing
 
-Phase 1 through Phase 8 combined test suite (`mvn clean test`):
+Full backend test suite (`mvn clean test`):
 
 | Test class | Type | Tests |
 |---|---|---|
 | `AccountServiceImplTest` | Unit (Mockito, no DB) | 22 |
 | `AccountControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 27 |
-| `LedgerServiceImplTest` | Unit (Mockito, no DB) | 13 |
+| `AccountServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 1 |
+| `LedgerServiceImplTest` | Unit (Mockito, no DB) | 17 |
+| `LedgerServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 5 |
 | `EventServiceImplTest` | Unit (Mockito, no DB) | 16 |
 | `TransactionServiceImplTest` | Unit (Mockito, no DB) | 22 |
-| `TransactionControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
-| `TransferControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 8 |
-| `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 9 |
+| `TransactionControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 10 |
+| `TransferControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 9 |
+| `TransactionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 15 |
+| `TransactionServiceSysCashIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 4 |
 | `BalanceReconstructionServiceImplTest` | Unit (Mockito, no DB) | 13 |
-| `BalanceReconstructionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 5 |
+| `BalanceReconstructionServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 8 |
 | `AuditServiceImplTest` | Unit (Mockito, no DB) | 33 |
 | `AuditControllerTest` | API layer (MockMvc + `GlobalExceptionHandler`) | 32 |
+| `AuditServiceIntegrationTest` | Integration (Spring Boot, PostgreSQL required) | 9 |
 | `LedgerApplicationTests` | Context smoke test (full Spring Boot, PostgreSQL required) | 1 |
-| **Total** | | **209** |
+| **Total** | | **244** |
 
 **Verified result:**
 
 ```
 mvn clean test
-Tests run: 209, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
 ---
@@ -563,7 +588,7 @@ event-sourced-ledger/
 | Phase 7 | Audit Module | **COMPLETED** (2026-09-13) |
 | Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
-| Phase 10 | Backend v1.0 Release | **NEXT** |
+| Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and
 deliverables.

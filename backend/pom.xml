@@ -15,7 +15,7 @@
 
     <groupId>com.ledger</groupId>
     <artifactId>event-sourced-ledger</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 
     <name>Event-Sourced Ledger</name>
     <description>Event-Sourced Double-Entry Bank Core</description>

@@ -318,7 +318,7 @@ All critical financial workflows, accounting invariants, defensive service bound
 
 # Phase 10 — Backend v1.0 Release
 
-**Status: NEXT**
+**Status: COMPLETED — 2026-09-21**
 
 ## Objective
 
@@ -326,15 +326,17 @@ Prepare the first stable backend release.
 
 ## Deliverables
 
-- Documentation review
-- Code cleanup
-- Migration verification
-- Final testing
-- Release tagging
+- Release-readiness audit completed across architecture, schema, APIs, and docs
+- Code-quality cleanup (pom.xml version 1.0.0, OpenAPI version v1.0, centralized pagination constants, Transaction Swagger docs, dead setStatus removal, service indentation standardization)
+- Database migration verification (Flyway V1–V5 verified, ddl-auto=validate compliant)
+- Release-readiness verification completed
+- Backend v1.0 release preparation completed
 
 ## Success Criteria
 
 Backend reaches production-quality standards.
+
+`mvn clean test` — **244 tests, 0 failures, BUILD SUCCESS**
 
 ---
 

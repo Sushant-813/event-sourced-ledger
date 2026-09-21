@@ -2,9 +2,9 @@
 
 **Project Name:** Event-Sourced Ledger
 
-**Status:** In Development
+**Status:** v1.0 Released
 
-**Current Version:** v0.1
+**Current Version:** v1.0
 
 ---
 
@@ -1157,6 +1157,42 @@ Phase 9 intentionally does NOT contain:
 - Database schema changes or new Flyway migrations (Flyway schema remains at version 5).
 - Performance optimizations for historical reconstruction or audit loading: loading full history remains $O(\text{history size})$; snapshotting and read-model caching remain deferred to post-v1.0 enhancements as correctness takes precedence over optimization.
 
-Next Milestone
+---
 
-Phase 10 — Backend v1.0 Release
+## 2026-09-21
+
+### Phase 10 — Backend v1.0 Release: COMPLETED
+
+Phase 10 completed the release-readiness audit, code-quality cleanup, and release metadata preparation for the Backend v1.0 release.
+
+#### What Was Completed & Verified
+
+- **Release-Readiness Audit:** Completed a comprehensive audit covering the entire source tree, test suite, architecture compliance, API contracts, Flyway migrations, database schema, configuration files, Maven build setup, and technical documentation. Zero functional or blocking defects were identified.
+- **Code-Quality Cleanup:**
+  - **Version Metadata:** Promoted Maven project version in `backend/pom.xml` from `0.1.0-SNAPSHOT` to `1.0.0`. Promoted OpenAPI specification version in `OpenApiConfig.java` from `v0.1` to `v1.0`.
+  - **Pagination Constants Centralization:** Removed duplicate `DEFAULT_PAGE`, `DEFAULT_SIZE`, and `MAX_SIZE` constants from `PaginationValidator.java`, centralizing `PaginationConstants.MAX_SIZE` as the single source of truth while preserving all existing validation behavior.
+  - **OpenAPI Documentation:** Added curated Swagger/OpenAPI annotations (`@Tag`, `@Operation`, `@ApiResponses`, `@ApiResponse`, `@Parameter`) to `TransactionController` for `/accounts/{accountId}/deposit` and `/accounts/{accountId}/withdrawal`, bringing transaction documentation up to parity with `AccountController`, `TransferController`, and `AuditController`.
+  - **Entity Immutability:** Removed the unused `setStatus(TransactionStatus status)` setter from `Transaction.java` after verifying zero usages across production and test code, ensuring transactions remain strictly immutable after construction.
+  - **Indentation Standardization:** Standardized `TransactionServiceImpl.java` from inconsistent double-tab / 8-space indentation to the project's standard 4-space indentation with zero logic or behavior changes.
+- **Database & Migration Integrity:** Flyway migrations (`V1`–`V5`) were intentionally left unchanged to protect schema immutability and checksum stability; `spring.jpa.hibernate.ddl-auto=validate` confirmed full entity/schema compatibility.
+- **Release Verification:** Executed full verification via `mvn clean test`.
+
+#### Verification Result
+
+```
+mvn clean test
+Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+Full suite passing: **244 total tests, 0 failures, 0 errors**.
+
+#### Architectural Boundary
+
+Phase 10 intentionally does NOT contain:
+- New features or business logic changes
+- Architectural refactoring or new dependencies
+- Database schema changes or new Flyway migrations
+- Roadmap features (authentication, RBAC, idempotency, CQRS, Kafka, Docker, CI/CD, multicurrency, snapshotting, optimistic locking)
+- Git commit or tag creation (release tagging will be performed after final metadata verification)
+
+Backend v1.0 release readiness confirmed.

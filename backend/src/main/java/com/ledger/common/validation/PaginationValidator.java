@@ -1,12 +1,9 @@
 package com.ledger.common.validation;
 
 import com.ledger.common.exception.InvalidPageParameterException;
+import com.ledger.common.pagination.PaginationConstants;
 
 public final class PaginationValidator {
-
-    public static final int DEFAULT_PAGE = 0;
-    public static final int DEFAULT_SIZE = 20;
-    public static final int MAX_SIZE = 100;
 
     private PaginationValidator() {
     }
@@ -23,9 +20,9 @@ public final class PaginationValidator {
                     "size must be >= 1");
         }
 
-        if (size > MAX_SIZE) {
+        if (size > PaginationConstants.MAX_SIZE) {
             throw new InvalidPageParameterException(
-                    "size must be <= 100 (requested: " + size + ")");
+                    "size must be <= " + PaginationConstants.MAX_SIZE + " (requested: " + size + ")");
         }
     }
 }

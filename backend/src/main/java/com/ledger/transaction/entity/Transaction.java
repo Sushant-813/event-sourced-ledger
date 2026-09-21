@@ -66,8 +66,4 @@ public class Transaction {
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
-
-    public void setStatus(TransactionStatus status) {
-        this.status = status;
-    }
 }
