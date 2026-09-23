@@ -409,21 +409,29 @@ Initialize the frontend application shell, tooling, design system foundations, r
 
 ## Phase F1 — Account Experience
 
+**Status: COMPLETED — 2026-09-23**
+
 ### Objective
 Implement account portfolio browsing, account creation, account detail routing, and lifecycle state management.
 
-### Deliverables
+### Deliverables Completed
 - Accounts directory page (`/accounts`) rendering `AccountResponse` items in an accessible `DataTable`.
 - Server-authoritative pagination (`page`, `size`) and filtering (`status`, `accountType`) synchronized with URL search parameters.
-- Account creation workflow/modal (`POST /accounts`) with pre-flight UX validation (`accountNumber` regex, `accountName`, `accountType`).
-- Account context layout shell (`AccountLayout`) mapping `/accounts/:accountId` routes with account metadata banner.
-- Account Overview tab (`/accounts/:accountId/overview`) displaying profile information and authoritative current balance (`GET /accounts/{id}/audit/balance`).
-- Account lifecycle actions (Freeze, Activate, Close) with accessible confirmation dialogs and cache invalidation.
+- Account creation workflow modal (`CreateAccountModal`, `POST /accounts`) with non-blank client validation, 409 conflict handling for duplicate account numbers, and navigation to account overview.
+- Account context layout shell (`AccountLayout`) mapping `/accounts/:accountId` routes with account metadata banner (`StatusBadge`, `TechnicalIdBadge`).
+- Account Overview tab (`/accounts/:accountId/overview`) displaying profile information, authoritative current balance (`GET /accounts/{id}/audit/balance` via `Money.fromWire()`), and status-gated lifecycle controls.
+- Account lifecycle mutations (`useFreezeAccount`, `useActivateAccount`, `useCloseAccount`) with confirmation dialogs (`FreezeConfirmDialog`, `CloseConfirmDialog`), 422 business-rule error handling, duplicate submission prevention (`isPending`), and server cache invalidation.
 - Error handling for missing accounts and `SYS-CASH` (HTTP 404 mapped to `AccountNotFoundView`).
-- Comprehensive empty, loading skeleton, and error boundary states.
+- Comprehensive empty, loading skeleton, and error boundary states (`EmptyState`, `ErrorDisplay`, `LoadingSpinner`).
+- Shared frontend design system infrastructure: `StatusBadge`, `TechnicalIdBadge`, `EmptyState`, `ErrorDisplay`, `DataTable`, `TablePagination`, `ModalDialog`, `ConfirmDialog`, `Toast`, `ToastViewport`, `ToastProvider`, `useToast`, `TabNav`.
+- Strict financial correctness: zero client-side balance calculations, zero optimistic balance updates, no N+1 balance queries.
+- Dashboard preservation: F0 `DashboardPage` remains untouched as a placeholder.
 
-### Success Criteria
-Users can browse accounts with pagination/filters, create new accounts, view account overviews with authoritative balances, and perform lifecycle status changes without UI desynchronization.
+### Verification Gates Passed
+- **Automated Tests:** `npm test` — **64/64 passed** (3 test files: `money.test.ts`, `date.test.ts`, `client.test.ts`).
+- **TypeScript Typecheck:** `npm run typecheck` — **PASS** (0 errors).
+- **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (clean compilation under `exactOptionalPropertyTypes: true` and optimized production bundle).
+- **Manual Verification:** **PASS** (account directory, filtering, sorting, pagination, creation, required-field validation, duplicate account-number handling, overview, authoritative balance display, account navigation, deep linking/refresh, invalid account handling, freeze, activate, close, closed-account persistence, SYS-CASH protection, browser back/forward navigation, F1/F2/F3/F4 scope boundaries, and dashboard preservation).
 
 ---
 
@@ -513,8 +521,8 @@ Dashboard accurately displays portfolio counts, UI is fully responsive and keybo
 | Milestone | Outcome | Status | Target Phase |
 | :--- | :--- | :--- | :--- |
 | **MF0** | Project Shell, Routing, Styling Tokens & API Foundation | COMPLETED (2026-09-23) | Phase F0 |
-| **MF1** | Account Directory, Overview, Creation & Lifecycle | UPCOMING | Phase F1 |
-| **MF2** | Deposit, Withdrawal & Transfer Workflows | UPCOMING | Phase F2 |
+| **MF1** | Account Directory, Overview, Creation & Lifecycle | COMPLETED (2026-09-23) | Phase F1 |
+| **MF2** | Deposit, Withdrawal & Transfer Workflows | UPCOMING (Next) | Phase F2 |
 | **MF3** | Transactions, Ledger Entries & Event Stream History | UPCOMING | Phase F3 |
 | **MF4** | Audit Trail & Historical Balance Reconstruction (`asOf`) | UPCOMING | Phase F4 |
 | **MF5** | Dashboard, Responsive / A11y Polish & End-to-End Validation | UPCOMING | Phase F5 |

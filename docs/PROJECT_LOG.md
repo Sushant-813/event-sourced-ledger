@@ -1288,4 +1288,97 @@ Phase F0 intentionally does NOT contain:
 - Backend code modifications (`git diff -- backend/` is completely empty)
 - Git commit creation
 
-Phase F0 accepted and complete. Phase F1 ready for execution.
+Phase F0 accepted and complete. Phase F1 ready for execution.
+
+---
+
+## 2026-09-23
+
+### Frontend Phase F1 — Account Experience: COMPLETED
+
+Phase F1 implemented the complete Account Experience feature set, including the server-paginated accounts directory, account creation modal, deep-linkable account layout context shell, account overview, authoritative current balance integration, and account lifecycle mutations with confirmation dialogs. All implementations strictly observe `FRONTEND_PRD.md`, `FRONTEND_TRD.md`, `DESIGN.md`, `FRONTEND_ARCHITECTURE.md`, `API_GUIDELINES.md`, and the approved Revision 2 Implementation Plan.
+
+#### What Was Completed & Verified
+
+**Accounts Directory (`/accounts`)**
+- Implemented `AccountsPage` at `/accounts` composing `AccountsTable`, `AccountFilters`, `AccountSortControl`, and `TablePagination`.
+- Implemented `AccountsTable` consuming `PagedResponse<AccountResponse>` using generic `DataTable<T>`.
+- Verified strict avoidance of N+1 balance queries: `GET /accounts` returns metadata only; directory table displays zero balances.
+- Implemented server-paginated controls using `TablePagination` with 1-based display index derived from zero-based server parameters.
+- Implemented URL search parameter synchronization via `useSearchParams` for `page`, `size`, `sortBy`, `direction`, `status`, and `accountType`. Filter/sort modifications reset page index to 0.
+- Implemented empty states distinguishing between empty directory (no accounts created yet) and filtered empty state (no matches with clear-filters affordance).
+
+**Account Creation (`CreateAccountModal`)**
+- Implemented `CreateAccountModal` form dialog invoking `POST /accounts` via `useCreateAccount` mutation hook.
+- Enforced non-blank validation for `accountNumber` and `accountName`, and enum validation for `accountType` (`SAVINGS`, `CURRENT`).
+- Preserved backend authority: regex hint (`^[A-Za-z0-9-_]{3,30}$`) is displayed as format guidance only and is not enforced as a false-blocking client validation rule.
+- Handled HTTP 409 Conflict gracefully by displaying an inline field error on `accountNumber` ("This account number is already in use").
+- Handled submission state: form controls and button disabled with spinner during `isPending` state, preventing duplicate submissions.
+- On HTTP 201 Created: automatically invalidated `['accounts', 'list']` React Query cache, triggered success toast notification, and navigated to the newly created account's overview.
+
+**Account Context Layout Shell (`AccountLayout`)**
+- Implemented `AccountLayout` routing shell mapping `/accounts/:accountId/*` sub-routes.
+- Rendered persistent account identification banner showing account name, `TechnicalIdBadge` with clipboard copy action for `accountNumber`, account type, and dual-encoded `StatusBadge`.
+- Rendered authoritative current balance loaded exclusively from `GET /accounts/{accountId}/audit/balance` formatted through `Money.fromWire()`.
+- Implemented `TabNav` with deep-linkable `NavLink` tabs: Overview (F1), Transactions (F3 placeholder), Ledger (F3 placeholder), Events (F3 placeholder), and Audit Trail (F4 placeholder).
+- Implemented accessible error boundary: missing or system-restricted accounts (HTTP 404 / `SYS-CASH`) render `AccountNotFoundView` with return link, preventing unhandled exceptions.
+- Provided shared `AccountOutletContext` (`account`, `balanceString`, `isBalanceLoading`, `refetchBalance`, `refetchAccount`) to child routes via React Router `useOutletContext`.
+
+**Account Overview & Lifecycle State Management (`AccountOverviewPage`)**
+- Implemented `AccountOverviewPage` at `/accounts/:accountId/overview` displaying comprehensive account identity metadata, database ID chip, and timestamps (`createdAt`, `updatedAt`).
+- Implemented authoritative balance display with dedicated server re-fetch control.
+- Implemented status-gated lifecycle controls:
+  - `ACTIVE`: Displays "Freeze Account" and "Close Account" action buttons.
+  - `FROZEN`: Displays "Reactivate Account" (primary) and "Close Account" (destructive) buttons, along with a warning notice banner.
+  - `CLOSED`: Displays permanent terminal closure notice banner; all operational action buttons are suppressed.
+- Implemented lifecycle mutation hooks in `src/features/accounts/api/accountMutations.ts`:
+  - `useFreezeAccount` (`PATCH /accounts/{id}/freeze`)
+  - `useActivateAccount` (`PATCH /accounts/{id}/activate`)
+  - `useCloseAccount` (`PATCH /accounts/{id}/close`)
+- Implemented accessible confirmation modals: `FreezeConfirmDialog` (explaining operational suspension) and `CloseConfirmDialog` (destructive red confirmation explaining permanent terminal closure per `DESIGN.md §9.3`).
+- Enforced strict server authority for business rule validation: `InvalidAccountStatusTransitionException` (HTTP 422) surfaces specific backend `serverMessage` in toast and dialog banners.
+- Prevented double submission through mutation `isPending` state gating.
+- Successful mutations invalidate both account detail (`['accounts', id]`), account list (`['accounts', 'list']`), and audit balance (`['accounts', id, 'balance']`) query caches.
+
+**Shared Presentational Infrastructure**
+- `src/components/typography/StatusBadge.tsx`: Dual-encoded status badge (`ACTIVE`, `FROZEN`, `CLOSED`) using token colors and labels from `DESIGN.md §10.2`.
+- `src/components/typography/TechnicalIdBadge.tsx`: Monospace identifier chip (`JetBrains Mono`, 13px) with hover-activated copy-to-clipboard button and success feedback.
+- `src/components/feedback/EmptyState.tsx`: Presentational container for empty lists and search results with icon, title, description, and primary action slot.
+- `src/components/feedback/ErrorDisplay.tsx`: Normalized error banner rendering `ApiError` network failures, 404, 409, and 422 messages with retry callback.
+- `src/components/data-display/DataTable.tsx` & `TablePagination.tsx`: Accessible generic table and pagination controls per `DESIGN.md §12.1` and `§21`.
+- `src/components/overlay/ModalDialog.tsx` & `ConfirmDialog.tsx`: Portal-based dialogs with focus trapping, `Escape` key listeners, backdrop blur, and body scroll lock.
+- `src/components/feedback/Toast.tsx`, `ToastViewport.tsx`, `ToastProvider.tsx`, `src/hooks/useToast.ts`: Toast notification system with 5s auto-dismiss and aria-live polite announcements per `DESIGN.md §17`.
+- `src/components/navigation/TabNav.tsx`: Horizontal account sub-view navigation tabs with active link highlight.
+
+**Financial Correctness Guarantees Maintained**
+- Zero client-side balance calculations, running balance derivations, or financial arithmetic.
+- Zero optimistic balance or lifecycle state mutations.
+- The backend remains the sole authority for all balance and accounting invariants.
+- Monetary display values formatted strictly through `Money.fromWire()`.
+- Untouched F0 foundation: `DashboardPage.tsx` preserved as F0 placeholder (deferred to F5).
+- Zero `/api/v1` prefix occurrences.
+
+#### Verification Result
+
+```text
+Typecheck:         PASS (tsc --noEmit, 0 errors)
+Automated Tests:   64/64 passed (3 test files: money, date, api client)
+Production Build:  PASS (tsc -b && vite build — optimized static bundle)
+Manual F1 Testing: PASS across all 18 test areas (directory, filters, sorting,
+                   pagination, creation, validation, duplicate 409, overview,
+                   authoritative balance, navigation, deep linking, 404/SYS-CASH,
+                   freeze, activate, close, closed persistence, browser history,
+                   and dashboard preservation)
+```
+
+#### Architectural Boundary
+
+Phase F1 intentionally does NOT contain:
+- Deposit, withdrawal, or transfer workflows (Phase F2)
+- Transaction history, ledger history, or event stream tabs (Phase F3)
+- Audit trail view or historical balance reconstruction (`asOf`) (Phase F4)
+- Dashboard aggregation metrics or quick actions (Phase F5)
+- Authentication or user management (out of scope for v1.0)
+- Backend code modifications (`git diff -- backend/` is completely empty)
+
+Phase F1 accepted and complete. Phase F2 ready for execution.

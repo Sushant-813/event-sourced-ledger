@@ -25,6 +25,8 @@ import { RootLayout } from './RootLayout'
 import { AccountLayout } from './AccountLayout'
 import { NotFoundPage } from './NotFoundPage'
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
+import { AccountsPage } from '@/features/accounts/pages/AccountsPage'
+import { AccountOverviewPage } from '@/features/accounts/pages/AccountOverviewPage'
 
 // ---------------------------------------------------------------------------
 // Minimal placeholder — renders a heading and scope note only.
@@ -59,7 +61,7 @@ const router = createBrowserRouter([
       // Accounts list — F1
       {
         path: 'accounts',
-        element: <Placeholder title="Accounts" phase="Phase F1" />,
+        element: <AccountsPage />,
       },
 
       // Account context — AccountLayout shell with nested sub-views
@@ -75,7 +77,7 @@ const router = createBrowserRouter([
           // Overview — F1
           {
             path: 'overview',
-            element: <Placeholder title="Account Overview" phase="Phase F1" />,
+            element: <AccountOverviewPage />,
           },
           // Transactions — F3
           {
