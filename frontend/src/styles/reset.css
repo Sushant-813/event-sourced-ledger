@@ -1,0 +1,126 @@
+/*
+ * Modern CSS Reset
+ * Source: DESIGN.md §27 (Accessibility Standards), FRONTEND_ARCHITECTURE.md §16
+ *
+ * Goals:
+ *  - Consistent box model across browsers
+ *  - Remove browser default list/margin/padding
+ *  - Visible focus rings that satisfy WCAG AA (DESIGN.md §27 rule 4)
+ *  - Color-independent focus (not relying solely on outline-color)
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Prevent font inflation on mobile */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Smooth scrolling for skip-link targets */
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--surface-canvas);
+  color: var(--color-body);
+  min-height: 100dvh;
+}
+
+/* Remove default list styles — lists are styled by component */
+ol, ul {
+  list-style: none;
+}
+
+/* Images and media are block-level and constrained by default */
+img, video, svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* Remove default button styling */
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font: inherit;
+}
+
+/* Anchor reset */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Table resets */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* Input/form resets */
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/*
+ * Focus Ring
+ * DESIGN.md §27 rule 4: "Focus rings use 2px solid var(--color-primary)
+ * with subtle offset."
+ * Applied globally so no interactive element is ever focus-invisible.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Remove focus ring from mouse/touch users (only show for keyboard) */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/*
+ * Skip Navigation Link
+ * FRONTEND_ARCHITECTURE.md §16.1: "A top-level skip link allows keyboard
+ * users to bypass sidebar navigation."
+ * Visually hidden until focused via keyboard.
+ */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-base);
+  z-index: 9999;
+  padding: var(--space-xs) var(--space-base);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: top 0.1s;
+}
+
+.skip-link:focus {
+  top: var(--space-base);
+}
+
+/*
+ * Screen-reader only utility
+ * Hides content visually while keeping it accessible to assistive technology.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

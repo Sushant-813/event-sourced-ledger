@@ -1,0 +1,11 @@
+/*
+ * Global Stylesheet — Root Assembly
+ *
+ * Import order is significant:
+ *   1. tokens.css   — CSS custom properties (must come first)
+ *   2. reset.css    — Normalizes browser defaults (consumes tokens)
+ *   3. typography.css — Font declarations and heading scale (consumes tokens)
+ */
+@import './tokens.css';
+@import './reset.css';
+@import './typography.css';

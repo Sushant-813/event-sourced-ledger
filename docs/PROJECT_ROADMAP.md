@@ -5,7 +5,8 @@
 **Current Status:**  
 - **Backend (Phases 0–10):** COMPLETED — v1.0.0 RELEASED (2026-09-21)  
 - **Frontend Planning & Documentation:** COMPLETED (2026-09-23)  
-- **Frontend Implementation (Phases F0–F5):** NEXT / READY FOR EXECUTION  
+- **Frontend Phase F0 — Frontend Foundation:** COMPLETED (2026-09-23)  
+- **Frontend Implementation (Phases F1–F5):** NEXT / READY FOR EXECUTION (Phase F1 Next)  
 - **Future Enhancements:** DEFERRED / POST-v1.0  
 
 ---
@@ -42,7 +43,7 @@ The project adheres to these core architectural and execution principles:
 ### 3.1 What is Covered
 - **Backend Core**: Event store, double-entry ledger, balance reconstruction, audit trail, pagination/sorting/filtering, pessimistic row locking, and REST APIs (**COMPLETED v1.0.0**).
 - **Frontend Planning**: Frozen PRD, TRD, Design System tokens, and Frontend Architecture (**COMPLETED**).
-- **Frontend Implementation**: React/TypeScript/Vite application shell, account management, monetary workflows, financial history, audit trail, dashboard, and quality validation (**UPCOMING — Phases F0–F5**).
+- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Feature Phases F1–F5 UPCOMING (Phase F1 Account Experience Next).
 
 ### 3.2 What is Intentionally Deferred (Post-v1.0)
 - User authentication and Role-Based Access Control (RBAC).
@@ -349,7 +350,7 @@ The frontend implementation must strictly observe the following technical and ar
 4. **Account Profile Balance Absence**: `AccountResponse` does not contain a balance field. Account list views display account identity without balances; no N+1 balance queries are permitted for account directories.
 5. **Exact Backend Endpoint Paths**: The API client connects to the verified Spring Boot controller paths (`/accounts`, `/transfers`, `/accounts/{accountId}/audit/*`). **There is NO `/api/v1` prefix.**
 6. **Decimal Safety**: Binary floating-point arithmetic (`Number`, `parseFloat`) is prohibited for monetary manipulation. All monetary amounts must be handled via an arbitrary-precision decimal abstraction.
-7. **Monetary Wire-Format Verification**: The question of whether the live backend emits `BigDecimal` as JSON strings or JSON numbers remains an implementation verification item. The live wire format must be verified against the running API before finalizing response ingestion logic.
+7. **Monetary Wire-Format Verification (Resolved in F0)**: Verified in Phase F0 that the live backend emits `BigDecimal` monetary values as unquoted JSON numbers (e.g. `"amount": 100.50`). The frontend handles this defensively via `Money.fromWire(number | string)` using `decimal.js`, with the IEEE-754 precision boundary formally documented in ADR-030. Outbound values are serialized as exact strings. Backend serialization hardening is recommended for a future release; backend code remains untouched in F0.
 8. **Transfer is a Workflow, Not a Page**: Because the backend provides no global transaction listing, transfers are implemented as an operational modal/workflow launched from Dashboard or Account surfaces, not a standalone global route.
 9. **Supported Dashboard Metrics Only**: The Dashboard displays **exactly three metrics**: Total Accounts, Active Accounts, and Frozen Accounts (retrieved via 3 lightweight parallel `GET /accounts` queries reading `totalElements`). No derived metrics (such as closed accounts) or unverified global financial figures are supported.
 10. **System Account Isolation**: `SYS-CASH` (ID 1) remains a backend-isolated contra-account and must never be exposed as an ordinary account in user-facing views or transfer selection dropdowns.
@@ -365,23 +366,44 @@ The frontend implementation proceeds in six sequential, independently testable p
 
 ## Phase F0 — Frontend Foundation
 
+**Status: COMPLETED — 2026-09-23**
+
 ### Objective
 Initialize the frontend application shell, tooling, design system foundations, routing infrastructure, and core API client.
 
-### Deliverables
-- Initialize React + TypeScript application using Vite.
-- Establish project directory structure defined in `FRONTEND_ARCHITECTURE.md` (`src/features`, `src/components`, `src/api`, `src/utils`, `src/styles`).
-- Implement Design System CSS custom properties in `src/styles/tokens.css` matching `DESIGN.md` §30.
-- Establish baseline typography (Inter and JetBrains Mono fonts) and CSS reset.
-- Set up React Router declarative route tree with `RootLayout` and `AppShell` (header, sidebar, main container with 1200px max-width cap).
-- Implement centralized API client (`fetch` wrapper) with `ApiError` normalization and configurable `VITE_API_BASE_URL` (no `/api/v1`).
-- Configure TanStack React Query provider with baseline caching conventions.
-- Implement arbitrary-precision decimal `Money` value object contract and testing fixtures.
-- Verify live backend wire format for monetary responses against running API.
-- Establish baseline test harness (Vitest, React Testing Library).
+### Deliverables Completed
+- React + TypeScript application initialized with Vite (`react ^19.1.0`, `vite ^6.3.5`, `typescript ~5.8.3`).
+- Project directory structure established per `FRONTEND_ARCHITECTURE.md` (`src/features`, `src/components`, `src/api`, `src/utils`, `src/styles`, `src/routes`, `src/types`).
+- Design System CSS custom properties in `src/styles/tokens.css` copied verbatim from `DESIGN.md` §30.
+- Baseline typography (Inter and JetBrains Mono fonts via Google Fonts + CSS fallback) and modern CSS reset (`reset.css`, `main.css`).
+- Layout components: `AppShell`, `TopBar` (60px header), `Sidebar` (240px desktop, off-canvas mobile), and `PageContainer` (1200px max-width cap).
+- React Router v7 declarative route tree (`AppRoutes`, `RootLayout`, `AccountLayout` shell) with focus management on route change.
+- Placeholder routes: `DashboardPage` (`/dashboard`), `Accounts` placeholder (`/accounts`), and catch-all `NotFoundPage` (404).
+- Centralized `apiClient` (`fetch` wrapper) with `ApiError` normalization, typed query parameters (skipping null/undefined), and 204 handling.
+- `ENDPOINTS` registry with verified controller paths and zero `/api/v1` prefix.
+- `VITE_API_BASE_URL` environment configuration (`.env.example`) and Vite development proxy for `/accounts` and `/transfers` with SPA HTML bypass.
+- TanStack React Query provider (`QueryClientProvider`) configured with 30s staleTime, 5min gcTime, 1 retry, no window focus refetch.
+- Arbitrary-precision decimal `Money` value object backed by `decimal.js` with 20 decimal digits of precision and `ROUND_HALF_UP` rounding.
+- Date utility (`src/utils/date.ts`) with ISO-8601 UTC formatting and `asOf` UTC parameter normalization.
+- Vitest + React Testing Library test harness (`test-setup.ts`, `vitest.config.ts`).
+- Responsive layout behavior verified (1280×900 desktop side-by-side, 390×844 mobile off-canvas with hamburger toggle).
+- Accessibility foundation: `<header>`, `<nav>`, `<main id="main-content">`, `.skip-link`, and 2px primary focus ring.
 
-### Success Criteria
-Application boots cleanly, renders the accessible AppShell layout, connects to backend endpoints, and passes initial foundation unit tests.
+### Explicit Scope Exclusions (F1+ Features NOT Implemented in F0)
+- Account management, creation, or lifecycle UI is **NOT** implemented (deferred to F1).
+- Deposit, withdrawal, or transfer UI is **NOT** implemented (deferred to F2).
+- Transaction, ledger, event stream, or audit trail UI is **NOT** implemented (deferred to F3/F4).
+- Dashboard metrics and analytics are **NOT** implemented (deferred to F1/F5).
+- Placeholder routes contain zero data fetching and zero business logic.
+- Backend code was **NOT** modified (`git diff -- backend/` is completely empty).
+
+### Verification Gates Passed
+- **Automated Tests:** `npm run test` — **64/64 passed** (Money tests: 34, Date tests: 18, API client tests: 12).
+- **TypeScript Typecheck:** `npm run typecheck` — **PASS** (0 errors).
+- **ESLint:** `npm run lint` — **PASS** (0 errors, 0 warnings).
+- **Production Build:** `npm run build` — **PASS** (optimized static `/dist` bundle generated cleanly via Vite 6.4.3).
+- **Chrome DevTools MCP Browser Verification:** Verified **B-01 through B-17** as completed and passing (app boot, non-blank render, semantic landmarks, TopBar, Sidebar, PageContainer, dashboard route, accounts route, account overview redirect, 404 page, 0 console errors, network inspection, 0 occurrences of `/api/v1`, 1280px desktop, 390px mobile, a11y landmarks/skip-link, and visible keyboard focus ring).
+- **Live Monetary Wire-Format Verification:** Verified against running backend (`http://localhost:8080`) across deposit, balance, ledger, and trail endpoints. Backend emits `BigDecimal` as unquoted JSON numbers (`"amount": 100.50`). Formally recorded in **ADR-030** in `docs/DECISIONS.md`. Money value object provides precision-safe decimal math and string serialization while defensively handling number wire input. Backend remains untouched.
 
 ---
 
@@ -490,7 +512,7 @@ Dashboard accurately displays portfolio counts, UI is fully responsive and keybo
 
 | Milestone | Outcome | Status | Target Phase |
 | :--- | :--- | :--- | :--- |
-| **MF0** | Project Shell, Routing, Styling Tokens & API Foundation | UPCOMING | Phase F0 |
+| **MF0** | Project Shell, Routing, Styling Tokens & API Foundation | COMPLETED (2026-09-23) | Phase F0 |
 | **MF1** | Account Directory, Overview, Creation & Lifecycle | UPCOMING | Phase F1 |
 | **MF2** | Deposit, Withdrawal & Transfer Workflows | UPCOMING | Phase F2 |
 | **MF3** | Transactions, Ledger Entries & Event Stream History | UPCOMING | Phase F3 |

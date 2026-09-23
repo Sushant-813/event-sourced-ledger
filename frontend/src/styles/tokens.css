@@ -1,0 +1,96 @@
+/*
+ * Design System Tokens
+ * Source of truth: docs/DESIGN.md §30
+ *
+ * Every value here is copied verbatim from DESIGN.md §30.
+ * Do not add ad-hoc values or modify tokens without updating DESIGN.md.
+ */
+:root {
+  /* ------------------------------------------------------------------
+   * Brand & Action
+   * ------------------------------------------------------------------ */
+  --color-primary: #0052ff;
+  --color-primary-active: #003ecc;
+  --color-primary-disabled: #a8b8cc;
+  --color-primary-soft: #e8efff;
+
+  /* ------------------------------------------------------------------
+   * Text (All WCAG AA Compliant — ratios verified in DESIGN.md §27)
+   * ------------------------------------------------------------------ */
+  --color-ink: #0a0b0d;           /* 18.8:1 contrast on white */
+  --color-body: #404550;          /* 8.2:1 contrast on white */
+  --color-body-strong: #0a0b0d;   /* 18.8:1 contrast on white */
+  --color-muted: #595e68;         /* 5.1:1 contrast on white (WCAG AA) */
+  --color-muted-soft: #8c919a;    /* 3.1:1 for borders/disabled */
+
+  /* ------------------------------------------------------------------
+   * Surfaces
+   * ------------------------------------------------------------------ */
+  --surface-canvas: #ffffff;
+  --surface-soft: #f7f8fa;
+  --surface-card: #ffffff;
+  --surface-strong: #eef0f3;
+  --surface-dark: #0a0b0d;
+  --surface-dark-elevated: #16181c;
+  --surface-success-soft: #ecfdf5;
+  --surface-error-soft: #fef2f2;
+  --surface-warning-soft: #fffbeb;
+  --surface-info-soft: #eff6ff;
+
+  /* ------------------------------------------------------------------
+   * Borders
+   * ------------------------------------------------------------------ */
+  --border-hairline: #dee1e6;
+  --border-hairline-soft: #eef0f3;
+
+  /* ------------------------------------------------------------------
+   * Semantic States
+   * ------------------------------------------------------------------ */
+  --color-positive-text: #047857; /* 4.7:1 contrast on white (WCAG AA) */
+  --color-positive: #05b169;      /* Badge fills / non-text indicators */
+  --color-negative: #cf202f;      /* 4.6:1 contrast on white (WCAG AA) */
+  --color-warning: #b77900;       /* 4.5:1 contrast on white (WCAG AA) */
+  --color-info: #0052ff;
+
+  /* ------------------------------------------------------------------
+   * Border Radius
+   * ------------------------------------------------------------------ */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 100px;
+  --radius-full: 9999px;
+
+  /* ------------------------------------------------------------------
+   * Spacing
+   * ------------------------------------------------------------------ */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-base: 16px;
+  --space-md: 20px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+
+  /* ------------------------------------------------------------------
+   * Elevation
+   * ------------------------------------------------------------------ */
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.06);
+
+  /* ------------------------------------------------------------------
+   * Typography
+   * Per DESIGN.md §4 and §30
+   * ------------------------------------------------------------------ */
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", Consolas, monospace;
+
+  /* ------------------------------------------------------------------
+   * Layout — derived from DESIGN.md §6 / FRONTEND_ARCHITECTURE.md §17
+   * ------------------------------------------------------------------ */
+  --layout-sidebar-width: 240px;
+  --layout-topbar-height: 60px;
+  --layout-content-max-width: 1200px;
+}

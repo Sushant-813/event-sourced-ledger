@@ -1882,6 +1882,72 @@ Negative
 
 ---
 
+# ADR-030
+
+## Title
+
+Backend Monetary Wire Format Serialization Hardening Recommendation
+
+### Status
+
+Proposed / Documented (Frontend defensive mitigation implemented in F0)
+
+### Context
+
+During Frontend Phase F0 implementation, a live wire-format verification gate was executed against the running backend (v1.0.0). Raw HTTP responses were inspected for all monetary endpoints without JSON deserializers or intermediate formatters:
+- `POST /accounts/{id}/deposit` -> `TransactionResponse.amount` returned as `100.50` (unquoted JSON number)
+- `GET /accounts/{id}/audit/balance` -> `AuditBalanceResponse.balance` returned as `100.50` (unquoted JSON number)
+- `GET /accounts/{id}/audit/ledger` -> `AccountLedgerEntryResponse.amount` returned as `100.50` (unquoted JSON number)
+- `GET /accounts/{id}/audit/trail` -> `AuditTrailResponse.finalBalance`, `balanceChange`, and `runningBalance` returned as `100.50` (unquoted JSON numbers)
+
+In JSON and JavaScript, unquoted numeric literals are parsed by `JSON.parse` directly into IEEE-754 double-precision floating-point numbers (`Number`). Standard IEEE-754 doubles provide 53 bits of mantissa precision, which equates to approximately 15–17 significant decimal digits.
+
+The backend database defines monetary columns as `NUMERIC(19, 2)`. Financial balances or accumulated totals exceeding $9,007,199,254,740.99 (9 trillion with 2 decimal places) will suffer silent precision loss when parsed by standard web browser clients or HTTP JSON consumers before any application-level code executes. Calling `String(parsedNumber)` in JavaScript does NOT and cannot recover precision that was already truncated or rounded by the browser's native `JSON.parse` engine.
+
+In Phase F0, the frontend has implemented a defensive compatibility layer (`Money.fromWire(number)` via `decimal.js`), which prevents further precision degradation within frontend computations, but cannot fix precision already lost during initial JSON deserialization.
+
+Per Frontend Phase F0 constraints, the backend must remain strictly untouched (`git diff -- backend/` must remain completely empty).
+
+### Decision
+
+1. **Document Frontend Mitigation (Phase F0):**
+   - Retain `Money.fromWire(number | string)` with explicit documentation that `String(number)` coercion is a defensive safety net and does not guarantee precision recovery for large values.
+   - For all outbound requests (e.g. deposit, withdrawal, transfer), the frontend serializes exact decimal strings (e.g. `"100.50"`) via `Money.toWireString()`.
+
+2. **Recommend Backend Serialization Hardening (Future Backend Maintenance / Phase):**
+   - Hardening should be performed on backend DTOs to serialize `BigDecimal` fields as JSON strings rather than JSON numbers.
+   - Recommended options for backend Jackson configuration:
+     a) Annotate all monetary `BigDecimal` fields in backend response DTOs (`TransactionResponse`, `AuditBalanceResponse`, `AccountLedgerEntryResponse`, `AuditTrailItemResponse`, `AuditTrailResponse`) with:
+        `@JsonSerialize(using = ToStringSerializer.class)`
+     b) Or globally configure Jackson in `JacksonConfig` / `application.properties`:
+        `spring.jackson.generator.write-bigdecimal-as-plain=true` combined with custom serializer or Jackson ObjectMapper configuration mapping `BigDecimal.class` to `ToStringSerializer.instance`.
+   - Incoming request DTOs (`DepositRequest`, `WithdrawalRequest`, `TransferRequest`) already support string decimal deserialization or standard Jackson BigDecimal parsing.
+
+3. **Backend Change Scope Boundary:**
+   - No backend modifications are made during Frontend Phase F0.
+   - The backend v1.0.0 release artifacts remain pristine and untouched.
+
+### Alternatives Considered
+
+- **Modify backend Jackson configuration in Phase F0:** Rejected. Violates the strict project constraint that backend v1.0.0 is released and frozen during frontend implementation, and `backend/` must have zero diff.
+- **Ignore the precision risk:** Rejected. In an event-sourced double-entry bank core, financial precision and correctness are paramount invariants. Documenting known serialization characteristics and their mathematical implications is required engineering practice.
+- **Use custom streaming JSON parser on frontend:** Rejected. Standard `fetch(...).json()` is the web standard; streaming parsers add substantial bundle weight and complexity for a problem that is standardly resolved by string serialization at the API boundary.
+
+### Consequences
+
+Positive
+
+- Absolute clarity on monetary wire-format behavior across frontend and backend.
+- Clear path for future backend hardening without breaking contract compatibility (frontend `Money.fromWire` already natively handles both string and number representations).
+- Zero changes to backend code or schema in Phase F0.
+- Frontend remains resilient and defensive.
+
+Negative
+
+- Until backend serialization hardening is implemented in a future release, clients receiving values > 15–17 significant digits in JSON numbers may experience precision loss at the `JSON.parse` boundary.
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

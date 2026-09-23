@@ -1195,4 +1195,97 @@ Phase 10 intentionally does NOT contain:
 - Roadmap features (authentication, RBAC, idempotency, CQRS, Kafka, Docker, CI/CD, multicurrency, snapshotting, optimistic locking)
 - Git commit or tag creation (release tagging will be performed after final metadata verification)
 
-Backend v1.0 release readiness confirmed.
+Backend v1.0 release readiness confirmed.
+
+---
+
+## 2026-09-23
+
+### Frontend Phase F0 — Frontend Foundation: COMPLETED
+
+Phase F0 delivered the complete frontend application foundation, tooling, design system tokens, layout shell, routing skeleton, centralized API client, and arbitrary-precision decimal value object, strictly aligned with `FRONTEND_PRD.md`, `FRONTEND_TRD.md`, `DESIGN.md`, `FRONTEND_ARCHITECTURE.md`, `API_GUIDELINES.md`, and the approved Revision 2 Implementation Plan.
+
+#### What Was Completed & Verified
+
+**Tooling & Dependency Alignment**
+- Aligned project dependencies with the approved F0 baseline: `react ^19.1.0` (19.3.0), `react-dom ^19.1.0` (19.3.0), `react-router-dom ^7.6.3`, `@tanstack/react-query ^5.81.5`, `decimal.js ^10.5.0`, `vite ^6.3.5` (6.4.3), `@vitejs/plugin-react ^4.5.2` (4.7.0), `typescript ~5.8.3` (5.8.3), and `vitest ^3.2.4` (3.2.7).
+- Corrected dependency drift from initial accidental Vite 8 / TypeScript 6 scaffolding.
+- Separated test runner configuration into a dedicated `vitest.config.ts`, keeping `vite.config.ts` purely focused on build and dev proxy configuration, completely eliminating typing conflicts.
+
+**Design System & Layout Architecture**
+- Implemented all CSS custom properties in `src/styles/tokens.css` copied verbatim from `DESIGN.md §30` (colors, surfaces, borders, radius, spacing, layout dimensions, shadows, transitions).
+- Configured typography in `src/styles/typography.css` loading Inter for UI copy and JetBrains Mono with tabular numbers for all monetary amounts, account numbers, timestamps, and reference IDs.
+- Implemented modern CSS reset in `src/styles/reset.css` with 2px solid primary focus ring (`#0052ff`) and skip navigation link.
+- Implemented `AppShell` layout component composing `TopBar` (60px fixed header), `Sidebar` (240px desktop, off-canvas mobile with hamburger menu toggle), `PageContainer` (1200px max-width cap), and polite `aria-live` announcer.
+- Implemented responsive shell behavior verified at 1280×900 (desktop) and 390×844 (mobile).
+
+**Routing & Views**
+- Implemented declarative route tree in `src/routes/AppRoutes.tsx` using React Router v7 `createBrowserRouter` and `RouterProvider`.
+- Implemented `RootLayout` with programmatic focus management shifting focus to `<main id="main-content">` on route navigation per `FRONTEND_ARCHITECTURE.md §16.2`.
+- Implemented `AccountLayout` shell providing route nesting for `/accounts/:accountId` sub-views.
+- Implemented minimal placeholder views: `DashboardPage` (`/dashboard`), `Accounts` (`/accounts`), and `NotFoundPage` (404 catch-all with return link).
+
+**API Client & Error Normalization**
+- Implemented centralized `apiClient` in `src/api/client.ts` using native `fetch`, consuming `VITE_API_BASE_URL` (empty in dev, routing through Vite proxy to `http://localhost:8080`).
+- Implemented query parameter serialization automatically skipping `null` and `undefined` entries.
+- Handled HTTP 204 No Content returning `undefined`.
+- Normalized all 4xx/5xx responses into `ApiError` using backend `BackendErrorBody` shape (`timestamp`, `status`, `error`, `message`, `path`).
+- Mapped network failures to `ApiError { status: 0, isNetworkError: true }`.
+- Implemented type guards: `isApiError`, `isNotFound`, `isConflict`, `isBusinessRuleViolation`, `isBadRequest`.
+- Implemented centralized `ENDPOINTS` registry in `src/api/endpoints.ts` matching backend `@RequestMapping` annotations with zero `/api/v1` prefix.
+
+**Monetary Value Object (`Money`) & Date Utilities**
+- Implemented `Money` value object in `src/utils/money.ts` backed by `decimal.js` (configured with 20 decimal digits of precision, `ROUND_HALF_UP` rounding, and `toExpPos: 21`).
+- Implemented arbitrary-precision arithmetic and comparison methods (`isZero`, `isPositive`, `isNegative`, `gte`, `gt`, `abs`).
+- Implemented wire serialization `toWireString()` guaranteeing exactly 2 decimal places for outbound requests.
+- Implemented display formatting `format()` with thousands separators, preserving `"0.00"` for zero and supporting optional `+` prefix.
+- Implemented `src/utils/date.ts` providing local presentation formatting (`formatTimestamp`, `formatDate`) and `asOf` UTC ISO-8601 normalization (`normalizeAsOf`, `nowUtcIso`).
+
+**Live Monetary Wire-Format Verification & ADR-030**
+- Started the backend and executed raw `curl` commands against running endpoints (`POST /accounts/{id}/deposit`, `GET /accounts/{id}/audit/balance`, `GET /accounts/{id}/audit/ledger`, `GET /accounts/{id}/audit/trail`).
+- Determined that the backend currently emits `BigDecimal` monetary values as **unquoted JSON numbers** (e.g. `"amount": 100.50`).
+- Documented that while `Money` internally provides arbitrary-precision arithmetic and exact string parsing via `fromWire(string)`, the browser runtime's `JSON.parse` engine converts unquoted JSON numbers to IEEE-754 64-bit floats before `Money.fromWire(number)` receives them. Calling `String(number)` prevents further arithmetic drift but cannot recover precision already lost at the JSON parse boundary for values exceeding 53 bits (>15–17 decimal digits).
+- Recorded **ADR-030** in `docs/DECISIONS.md` documenting the precision risk and recommending backend serialization hardening (`@JsonSerialize(using = ToStringSerializer.class)`) for a future backend release.
+- Confirmed backend remains untouched in F0.
+
+**Chrome DevTools MCP Browser Verification**
+- Executed all 17 browser verification checks (**B-01 through B-17**) via `chrome-devtools-mcp` against running frontend (`http://localhost:5173`):
+  - B-01: Vite dev server booted without connection error; `/` redirected to `/dashboard`.
+  - B-02: Non-blank document render confirmed.
+  - B-03: Accessibility landmarks (`<header>`, `<nav>`, `<main id="main-content">`) verified.
+  - B-04: TopBar rendered at 60px height with logo and title.
+  - B-05: Sidebar rendered with Dashboard and Accounts links.
+  - B-06: Main content container rendered with 1200px max-width constraint.
+  - B-07: `/dashboard` rendered `DashboardPage` placeholder.
+  - B-08: `/accounts` rendered `Accounts` placeholder; SPA HTML bypass verified.
+  - B-09: `/accounts/999` redirected to `/accounts/999/overview` rendering `AccountLayout` shell.
+  - B-10: `/totally-unknown-path` rendered `NotFoundPage` (404).
+  - B-11: Console messages inspected: 0 uncaught errors, 0 warnings.
+  - B-12: Network requests inspected: fonts and modules loaded.
+  - B-13: Network URLs inspected: 0 occurrences of `/api/v1`.
+  - B-14: Desktop layout (1280×900) verified with persistent sidebar.
+  - B-15: Mobile layout (390×844) verified with off-canvas sidebar and hamburger toggle.
+  - B-16: Accessibility landmarks and skip link verified in a11y tree.
+  - B-17: Tab key focus ring verified (2px solid `#0052ff` with 2px offset).
+
+#### Verification Result
+
+```text
+npm run test       → 64/64 passed (Money: 34, Date: 18, API client: 12)
+npm run typecheck  → PASS (0 errors)
+npm run lint       → PASS (0 errors, 0 warnings)
+npm run build      → PASS (optimized static bundle in 2.06s via Vite 6.4.3)
+```
+
+#### Architectural Boundary
+
+Phase F0 intentionally does NOT contain:
+- Account management, creation, or lifecycle UI (Phase F1)
+- Deposit, withdrawal, or transfer UI (Phase F2)
+- Transaction, ledger, event stream, or audit trail UI (Phases F3 & F4)
+- Dashboard metrics or business queries (Phase F1 / F5)
+- Feature-specific DTOs or validation stubs (`validation.ts`)
+- Backend code modifications (`git diff -- backend/` is completely empty)
+- Git commit creation
+
+Phase F0 accepted and complete. Phase F1 ready for execution.

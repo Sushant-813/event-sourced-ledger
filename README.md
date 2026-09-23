@@ -1,21 +1,28 @@
 # Event-Sourced Ledger
 
-A learning and portfolio backend implementation of a **double-entry financial ledger** built
-on event sourcing principles.
+A learning and portfolio implementation of a **double-entry financial ledger** built on event
+sourcing principles, featuring a **Java / Spring Boot** backend and a **React / TypeScript**
+frontend.
 
 Rather than storing account balances as mutable fields, this system is designed so that every
-financial action is recorded as an immutable event. Current state will always be derived from
-that historical record — never stored as the source of truth. This design prioritises
-correctness, complete auditability, and the ability to reconstruct any past state from history
-alone.
+financial action is recorded as an immutable event. Current state is derived from that historical
+record — never stored as a mutable source of truth. The backend serves as the authoritative
+source of truth for financial state, double-entry invariant enforcement, and balance reconstruction;
+the frontend consumes read models and dispatches commands without performing client-side financial
+calculations or balance reconstruction.
 
-> **Backend v1.0.0 is complete and verified.** All core financial operations, event store,
-> double-entry ledger, balance reconstruction, audit module, API refinement, testing, and release
-> hardening are complete through Phase 10. See the [Development Roadmap](#development-roadmap).
+> **Project Status:**
+> - **Backend v1.0.0:** Complete and verified (Phases 0–10).
+> - **Frontend Phase F0 (Frontend Foundation):** Complete and verified.
+> - **Frontend Phase F1 (Account Directory & Detail):** Next phase.
+>
+> See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Frontend Status](#frontend-status).
 
 ---
 
 ## Current Status
+
+### Backend (v1.0.0 Complete)
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -30,6 +37,17 @@ alone.
 | Phase 8 | API Refinement | **COMPLETED** (2026-09-19) |
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
+
+### Frontend (Phase F0 Complete — Phased Implementation In Progress)
+
+| Phase | Description | Status | Target |
+|-------|-------------|--------|--------|
+| Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
+| Phase F1 | Account Directory, Overview, Creation & Lifecycle | **UPCOMING** | Account Management UI |
+| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **UPCOMING** | Transaction Forms & Modals |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** | History & Journal Tables |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
 
 ### Phase 1 — Account Module (completed)
 
@@ -338,6 +356,73 @@ Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
+## Frontend Status
+
+**Frontend Phase F0 — Frontend Foundation** is complete.
+
+Phase F0 established the frontend application scaffold, design system tokens, layout shell, routing
+infrastructure, and centralized API client. The frontend is under active phased implementation;
+application features are introduced incrementally across phases F1 through F5.
+
+### Implemented in Phase F0
+
+- **Application Scaffold & Tooling**: Initialized with Vite, React 19, TypeScript 5.8, ESLint 9, and Vitest 3.
+- **Directory Structure**: Established clean architecture per `FRONTEND_ARCHITECTURE.md` (`src/features`, `src/components`, `src/api`, `src/utils`, `src/styles`, `src/routes`, `src/types`).
+- **Design System Tokens**: CSS custom properties implemented in `src/styles/tokens.css` copied verbatim from `DESIGN.md` §30 (color palette, surfaces, borders, radius, spacing, shadows, transitions).
+- **Typography & Reset**: Baseline typography loading Inter for UI copy and JetBrains Mono with tabular figures for monetary values, account numbers, and IDs, paired with a modern CSS reset (`reset.css`, `main.css`).
+- **Responsive AppShell**: Layout components comprising `TopBar` (60px header), `Sidebar` (240px persistent desktop sidebar, off-canvas mobile drawer with hamburger toggle), and `PageContainer` (1200px max-width content cap).
+- **Routing Infrastructure**: React Router v7 declarative route tree (`AppRoutes`, `RootLayout`, `AccountLayout` shell) with focus management shifting keyboard focus to `<main id="main-content">` on navigation.
+- **Placeholder Views**: Minimal placeholder routes for `/dashboard`, `/accounts`, and a 404 catch-all (`NotFoundPage`).
+- **Centralized API Client**: Native `fetch` wrapper (`apiClient`) with automatic query parameter serialization (skipping `null`/`undefined`), HTTP 204 handling, and `ApiError` normalization mapped from backend error bodies.
+- **Endpoints Registry**: Centralized `ENDPOINTS` registry matching backend Spring Boot controller mappings with **zero `/api/v1` prefix**.
+- **Development Proxy**: Vite dev server configured to proxy `/accounts` and `/transfers` to `http://localhost:8080` with SPA HTML navigation bypass.
+- **State Management & Caching**: TanStack React Query (`QueryClientProvider`) configured with baseline caching (30s stale time, 5min garbage collection).
+- **Money Value Object**: Arbitrary-precision decimal arithmetic backed by `decimal.js` (20 decimal digits of precision, `ROUND_HALF_UP` rounding), comparison helpers, localized display formatting, and exact 2-decimal-place outbound wire serialization (`toWireString()`).
+- **Date Utilities**: ISO-8601 UTC string parsing and localized presentation formatting (`src/utils/date.ts`).
+- **Testing Foundation**: Vitest with jsdom environment, React Testing Library, and custom DOM matchers.
+- **Accessibility Foundation**: Semantic HTML5 landmarks (`<header>`, `<nav>`, `<main id="main-content">`), `.skip-link`, and a 2px primary focus ring.
+
+### What Is NOT Implemented Yet (Future Phases F1–F5)
+
+The frontend is in its foundation phase. In accordance with the phased project roadmap, the following
+features are explicitly deferred to future phases and are **not yet implemented**:
+
+- Account directory, account detail, account creation modal, and freeze/activate/close lifecycle UI (Phase F1)
+- Deposit, withdrawal, and transfer workflows and forms (Phase F2)
+- Transaction lists, ledger entry tables, and event stream history (Phase F3)
+- Point-in-time balance reconstruction UI and event-by-event audit trail views (Phase F4)
+- Live dashboard portfolio metrics and aggregate financial statistics (Phases F1 / F5)
+
+Placeholder routes contain no business logic or data fetching.
+
+### Verification Summary
+
+Frontend Phase F0 passes all quality gates:
+
+- **Automated Tests:** `npm run test` — **64/64 passed** (Money: 34, Date: 18, API client: 12)
+- **TypeScript Typecheck:** `npm run typecheck` (`tsc --noEmit`) and `tsc -b` — **PASS** (0 errors)
+- **Linting:** `npm run lint` (`eslint . --max-warnings 0`) — **PASS** (0 errors, 0 warnings)
+- **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (optimized static bundle)
+- **Browser Verification:** Completed via Chrome DevTools MCP (verified app boot, semantic landmarks, AppShell layout, desktop 1280px and mobile 390px responsive behavior, route transitions, zero console errors, zero `/api/v1` calls, and keyboard focus rings).
+
+### Monetary Wire-Format Finding (ADR-030)
+
+During Phase F0 verification against the running backend, live HTTP responses were inspected across
+monetary endpoints. The current backend (v1.0.0) serializes monetary `BigDecimal` fields as **unquoted
+JSON numbers** (e.g. `"amount": 100.50`).
+
+In JavaScript, unquoted numeric literals are parsed by the browser runtime's native `JSON.parse` into
+IEEE-754 double-precision floats, which provide 53 bits of precision (~15–17 decimal digits). Values
+exceeding this limit will experience precision loss before frontend application code runs. While the
+frontend `Money` value object uses arbitrary-precision `decimal.js` and handles number inputs
+defensively, calling `String(number)` cannot recover precision already lost at the JSON parse boundary.
+
+This finding and a future recommendation for backend Jackson serialization hardening
+(`@JsonSerialize(using = ToStringSerializer.class)`) are formally documented in
+[ADR-030](docs/DECISIONS.md). Backend v1.0.0 remains frozen and untouched during frontend implementation.
+
+---
+
 ## Architecture
 
 ```
@@ -367,9 +452,28 @@ exposes complete historical traceability and event-by-event balance explanations
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural specification.
 
+### Frontend Architecture
+
+```
+User Interface  →  AppShell (TopBar, Sidebar, PageContainer)
+                →  Feature Views (Dashboard, Accounts, etc.)
+State & Data    →  TanStack React Query (server-state caching)
+                →  React Router v7 (declarative routing & focus management)
+Domain / Utils  →  Money (decimal.js arbitrary-precision value object)
+                →  Date formatting & validation helpers
+Infrastructure  →  apiClient (fetch wrapper with ApiError normalization)
+                →  ENDPOINTS (exact backend controller paths, no /api/v1)
+Network         →  Vite Dev Proxy (dev) / Reverse Proxy (prod) → Backend REST API
+```
+
+See [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) and [docs/DESIGN.md](docs/DESIGN.md)
+for the complete frontend architectural and design system specifications.
+
 ---
 
 ## Technology Stack
+
+### Backend
 
 | Component | Technology | Version |
 |-----------|------------|---------|
@@ -383,6 +487,21 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete architectural 
 | API Documentation | Swagger / OpenAPI 3 (springdoc) | v1.0 (springdoc 2.8.13) |
 | Logging | SLF4J / Logback | — |
 | Testing | JUnit 5 / Mockito / Spring Boot Test | — |
+
+### Frontend (Phase F0 Baseline)
+
+| Component | Technology | Version |
+|-----------|------------|---------|
+| UI Framework | React | ^19.1.0 |
+| Language | TypeScript | ~5.8.3 |
+| Build Tool / Dev Server | Vite | ^6.3.5 |
+| Routing | React Router | ^7.6.3 |
+| Server State Caching | TanStack React Query | ^5.81.5 |
+| Monetary Math | decimal.js | ^10.5.0 |
+| Test Runner | Vitest | ^3.2.4 |
+| Component Testing | React Testing Library | ^16.3.0 |
+| Test DOM Environment | jsdom | ^26.1.0 |
+| Linter | ESLint (Flat Config) | ^9.30.0 |
 
 ---
 
@@ -498,6 +617,59 @@ cd backend
 mvn clean test
 ```
 
+### Frontend Development
+
+#### Prerequisites
+
+- Node.js 20+
+- npm 10+
+
+#### Setup & Install
+
+```bash
+cd frontend
+npm install
+```
+
+#### Run Development Server
+
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend development server starts at `http://localhost:5173`. In development, Vite
+automatically proxies API requests (`/accounts`, `/transfers`) to the backend running at
+`http://localhost:8080`.
+
+#### Run Tests
+
+```bash
+cd frontend
+npm run test
+```
+
+#### Run Typecheck
+
+```bash
+cd frontend
+npm run typecheck
+```
+
+#### Run Linter
+
+```bash
+cd frontend
+npm run lint
+```
+
+#### Build Production Bundle
+
+```bash
+cd frontend
+npm run build
+```
+
 ---
 
 ## Testing
@@ -532,6 +704,24 @@ mvn clean test
 Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
 
+### Frontend Test Suite (`npm run test`)
+
+Vitest test suite executing in jsdom:
+
+| Test Suite | Module | Tests |
+|---|---|---|
+| `money.test.ts` | Arbitrary-precision decimal value object & formatting | 34 |
+| `date.test.ts` | UTC parsing, presentation formatting & asOf normalization | 18 |
+| `client.test.ts` | API client, query param serialization & ApiError handling | 12 |
+| **Total** | | **64** |
+
+**Verified result:**
+
+```text
+Test Files  3 passed (3)
+     Tests  64 passed (64)
+```
+
 ---
 
 ## Repository Structure
@@ -550,6 +740,20 @@ event-sourced-ledger/
 │       │       └── db/migration/        # Flyway SQL migrations
 │       └── test/
 │           └── java/com/ledger/         # Test source
+├── frontend/
+│   ├── package.json                     # NPM project descriptor & scripts
+│   ├── vite.config.ts                   # Vite build & proxy configuration
+│   ├── vitest.config.ts                 # Vitest test runner configuration
+│   ├── tsconfig.json                    # Solution-style TypeScript configuration
+│   ├── public/                          # Static assets (favicons, SVG icons)
+│   └── src/
+│       ├── api/                         # Centralized API client & endpoints registry
+│       ├── components/                  # Shared UI components & layout shell
+│       ├── features/                    # Feature domain modules (accounts, transactions, audit)
+│       ├── routes/                      # Route tree & layout routing
+│       ├── styles/                      # Design system tokens, typography & reset
+│       ├── types/                       # Shared TypeScript definitions
+│       └── utils/                       # Money value object & date utilities
 ├── docs/                                # Project documentation
 │   └── ai/AI_DEVELOPMENT_ENVIRONMENT.md # AI-assisted development configuration
 ├── .gitignore
@@ -564,17 +768,23 @@ event-sourced-ledger/
 |----------|---------|
 | [PRD](docs/PRD.md) | Business objectives, problem statement, and success criteria |
 | [TRD](docs/TRD.md) | Technology stack, dependencies, and technical requirements |
-| [Architecture](docs/ARCHITECTURE.md) | System architecture, layers, and design principles |
+| [Frontend PRD](docs/FRONTEND_PRD.md) | Frontend user journeys, view requirements, and success metrics |
+| [Frontend TRD](docs/FRONTEND_TRD.md) | Frontend technical baseline, dependencies, and bundle budgets |
+| [Architecture](docs/ARCHITECTURE.md) | Backend system architecture, layers, and design principles |
+| [Frontend Architecture](docs/FRONTEND_ARCHITECTURE.md) | Frontend component hierarchy, state management, and routing |
+| [Design System](docs/DESIGN.md) | Visual language, design tokens, color palette, and accessibility |
 | [Database Design](docs/DATABASE_DESIGN.md) | Schema design, entities, constraints, and migration strategy |
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
-| [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-029) |
+| [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones (Phases 0–10 & F0–F5) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-030) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
 
 ## Development Roadmap
+
+### Backend (v1.0.0 Complete)
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -590,8 +800,18 @@ event-sourced-ledger/
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and
-deliverables.
+### Frontend (Phased Implementation In Progress)
+
+| Phase | Description | Status | Target |
+|-------|-------------|--------|--------|
+| Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
+| Phase F1 | Account Directory, Overview, Creation & Lifecycle | **UPCOMING** | Account Management UI |
+| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **UPCOMING** | Transaction Forms & Modals |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** | History & Journal Tables |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
+
+See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and deliverables.
 
 ---
 

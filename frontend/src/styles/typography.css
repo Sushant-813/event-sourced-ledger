@@ -1,0 +1,68 @@
+/*
+ * Typography
+ * Source: DESIGN.md §4
+ *
+ * Inter — UI copy, labels, headings, body text.
+ * JetBrains Mono — ALL monetary values, account numbers, reference IDs,
+ *                  event IDs, timestamps, and any tabular numeric data.
+ *
+ * Both fonts are loaded from Google Fonts in index.html.
+ * The @font-face declarations below are fallback / reinforcement
+ * for environments where the Google Fonts link is unavailable.
+ */
+
+/* Base font on the document root */
+html {
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Heading scale — DESIGN.md §4 */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-ink);
+}
+
+h1 { font-size: 1.75rem; }  /* 28px */
+h2 { font-size: 1.375rem; } /* 22px */
+h3 { font-size: 1.125rem; } /* 18px */
+h4 { font-size: 1rem; }     /* 16px */
+
+/* Body text */
+p, li, td, th, label, input, button, select, textarea {
+  font-family: var(--font-ui);
+  font-size: 0.9375rem; /* 15px */
+  color: var(--color-body);
+}
+
+/*
+ * Monospace: financial values, account numbers, timestamps, reference IDs.
+ * DESIGN.md §4: "All monetary amounts, account numbers, reference numbers,
+ * and timestamps must use JetBrains Mono with tabular-nums feature enabled."
+ */
+.font-mono,
+.financial-value,
+.account-number,
+.reference-number,
+.timestamp {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Muted / label text */
+.text-muted {
+  color: var(--color-muted);
+  font-size: 0.8125rem; /* 13px */
+}
+
+.text-caption {
+  color: var(--color-muted);
+  font-size: 0.75rem; /* 12px */
+}
