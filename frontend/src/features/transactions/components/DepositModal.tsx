@@ -1,0 +1,362 @@
+/**
+ * DepositModal Component
+ *
+ * Modal dialog for depositing funds into an ACTIVE account via POST /accounts/{id}/deposit.
+ *
+ * INVARIANTS:
+ *   - Client validation via validateMonetaryAmount() mirrors backend constraints.
+ *   - Zero JavaScript floating-point conversions.
+ *   - Outbound wire amount serialized via Money.toWireString().
+ *   - Inbound response amount ingested via Money.fromWire(response.amount).format().
+ *   - Form inputs and submit actions disabled while mutation isPending.
+ *   - Success toast displays authoritative transaction reference number.
+ *   - Zero optimistic balance updates.
+ *
+ * Source: DESIGN.md §16, FRONTEND_PRD.md §9.1, FRONTEND_ARCHITECTURE.md §14
+ */
+import React, { useState } from 'react'
+import { ModalDialog } from '@/components/overlay/ModalDialog'
+import { LoadingSpinner } from '@/components/feedback/LoadingSpinner'
+import { ErrorDisplay } from '@/components/feedback/ErrorDisplay'
+import { TechnicalIdBadge } from '@/components/typography/TechnicalIdBadge'
+import { useDeposit } from '../api/transactionMutations'
+import { useToast } from '@/hooks/useToast'
+import { validateMonetaryAmount } from '@/utils/validation'
+import { Money } from '@/utils/money'
+import { isApiError, type ApiError } from '@/api/errors'
+import type { AccountResponse } from '@/features/accounts/types/account'
+
+export interface DepositModalProps {
+  isOpen: boolean
+  onClose: () => void
+  account: AccountResponse
+}
+
+export const DepositModal: React.FC<DepositModalProps> = ({
+  isOpen,
+  onClose,
+  account,
+}) => {
+  const toast = useToast()
+  const { mutateAsync: deposit, isPending } = useDeposit()
+
+  const [amount, setAmount] = useState('')
+  const [fieldError, setFieldError] = useState<string | null>(null)
+  const [serverError, setServerError] = useState<ApiError | Error | null>(null)
+
+  const resetForm = () => {
+    setAmount('')
+    setFieldError(null)
+    setServerError(null)
+  }
+
+  const handleClose = () => {
+    if (isPending) return
+    resetForm()
+    onClose()
+  }
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAmount(e.target.value)
+    if (fieldError) {
+      setFieldError(null)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isPending) return
+
+    setServerError(null)
+
+    const validation = validateMonetaryAmount(amount)
+    if (!validation.isValid || !validation.money) {
+      setFieldError(validation.error ?? 'Please enter a valid amount')
+      return
+    }
+
+    try {
+      const data = await deposit({
+        accountId: account.id,
+        amount: validation.money.toWireString(),
+      })
+
+      const formattedAmount = Money.fromWire(data.amount).format()
+      toast.success(
+        'Deposit Successful',
+        `Deposit of ₹${formattedAmount} completed. Reference: ${data.referenceNumber}`
+      )
+
+      handleClose()
+    } catch (err: unknown) {
+      if (isApiError(err)) {
+        setServerError(err)
+      } else if (err instanceof Error) {
+        setServerError(err)
+      } else {
+        setServerError(new Error('An unexpected error occurred while processing the deposit.'))
+      }
+    }
+  }
+
+  return (
+    <ModalDialog
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Deposit Funds"
+      maxWidth="480px"
+    >
+      <form onSubmit={handleSubmit} className="monetary-form" noValidate>
+        {serverError !== null && (
+          <div className="monetary-form__error-banner" data-testid="deposit-error-banner">
+            <ErrorDisplay error={serverError} compact />
+          </div>
+        )}
+
+        <div className="monetary-form__context-box">
+          <div className="monetary-form__context-row">
+            <span className="monetary-form__context-label">Target Account</span>
+            <span className="monetary-form__context-name font-medium">{account.accountName}</span>
+          </div>
+          <div className="monetary-form__context-row">
+            <span className="monetary-form__context-label">Account Number</span>
+            <TechnicalIdBadge id={account.accountNumber} label="Target Account Number" />
+          </div>
+        </div>
+
+        <div className="monetary-form__field">
+          <label htmlFor="deposit-amount" className="monetary-form__label">
+            Deposit Amount <span className="monetary-form__required">*</span>
+          </label>
+
+          <div
+            className={`monetary-form__input-wrapper ${
+              fieldError ? 'monetary-form__input-wrapper--error' : ''
+            }`}
+          >
+            <span className="monetary-form__currency-prefix" aria-hidden="true">
+              ₹
+            </span>
+            <input
+              id="deposit-amount"
+              type="text"
+              inputMode="decimal"
+              value={amount}
+              onChange={handleAmountChange}
+              disabled={isPending}
+              placeholder="0.00"
+              className="monetary-form__input font-mono"
+              aria-invalid={Boolean(fieldError)}
+              aria-describedby={
+                fieldError ? 'deposit-amount-error' : 'deposit-amount-hint'
+              }
+              autoFocus
+            />
+          </div>
+
+          {fieldError ? (
+            <p id="deposit-amount-error" className="monetary-form__field-error" role="alert">
+              {fieldError}
+            </p>
+          ) : (
+            <p id="deposit-amount-hint" className="monetary-form__hint text-caption text-muted">
+              Minimum ₹0.01. Maximum 17 integer digits and 2 decimal places.
+            </p>
+          )}
+        </div>
+
+        <div className="monetary-form__actions">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={isPending}
+            className="monetary-form__btn monetary-form__btn--secondary"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={isPending}
+            className="monetary-form__btn monetary-form__btn--primary"
+            data-testid="deposit-submit-button"
+          >
+            {isPending ? (
+              <span className="monetary-form__loading-inline">
+                <LoadingSpinner size="sm" label="Processing deposit..." />
+                <span>Depositing...</span>
+              </span>
+            ) : (
+              'Deposit Funds'
+            )}
+          </button>
+        </div>
+
+        <style>{`
+          .monetary-form {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+          }
+
+          .monetary-form__error-banner {
+            margin-bottom: var(--space-xs);
+          }
+
+          .monetary-form__context-box {
+            background: var(--surface-soft);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-md);
+            padding: var(--space-sm) var(--space-base);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+
+          .monetary-form__context-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+
+          .monetary-form__context-label {
+            font-size: 13px;
+            color: var(--color-muted);
+          }
+
+          .monetary-form__context-name {
+            font-size: 14px;
+            color: var(--color-ink);
+          }
+
+          .monetary-form__field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+
+          .monetary-form__label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--color-ink);
+          }
+
+          .monetary-form__required {
+            color: var(--color-negative);
+          }
+
+          .monetary-form__input-wrapper {
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-md);
+            background: var(--surface-card);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          .monetary-form__input-wrapper:focus-within {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px var(--color-primary-soft);
+          }
+
+          .monetary-form__input-wrapper--error {
+            border-color: var(--color-negative) !important;
+          }
+
+          .monetary-form__currency-prefix {
+            padding-left: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--color-muted);
+            user-select: none;
+          }
+
+          .monetary-form__input {
+            width: 100%;
+            height: 44px;
+            padding: 10px 14px 10px 8px;
+            border: none;
+            background: transparent;
+            font-size: 16px;
+            color: var(--color-ink);
+            outline: none;
+          }
+
+          .monetary-form__input:disabled {
+            color: var(--color-muted);
+            cursor: not-allowed;
+          }
+
+          .monetary-form__field-error {
+            font-size: 13px;
+            color: var(--color-negative);
+            margin: 0;
+          }
+
+          .monetary-form__hint {
+            margin: 0;
+            font-size: 12px;
+          }
+
+          .monetary-form__actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 12px;
+            padding-top: var(--space-base);
+            border-top: 1px solid var(--border-hairline);
+            margin-top: var(--space-xs);
+          }
+
+          .monetary-form__btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 40px;
+            padding: 0 20px;
+            font-family: var(--font-ui);
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: var(--radius-pill);
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+            text-decoration: none;
+          }
+
+          .monetary-form__btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.65;
+          }
+
+          .monetary-form__btn--secondary {
+            background: transparent;
+            border: 1px solid var(--border-hairline);
+            color: var(--color-body);
+          }
+
+          .monetary-form__btn--secondary:hover:not(:disabled) {
+            background: var(--surface-soft);
+            color: var(--color-ink);
+          }
+
+          .monetary-form__btn--primary {
+            background: var(--color-primary);
+            border: 1px solid var(--color-primary);
+            color: #ffffff;
+          }
+
+          .monetary-form__btn--primary:hover:not(:disabled) {
+            background: var(--color-primary-active);
+            border-color: var(--color-primary-active);
+          }
+
+          .monetary-form__loading-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+          }
+        `}</style>
+      </form>
+    </ModalDialog>
+  )
+}

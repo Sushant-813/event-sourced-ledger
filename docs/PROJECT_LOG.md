@@ -1381,4 +1381,104 @@ Phase F1 intentionally does NOT contain:
 - Authentication or user management (out of scope for v1.0)
 - Backend code modifications (`git diff -- backend/` is completely empty)
 
-Phase F1 accepted and complete. Phase F2 ready for execution.
+Phase F1 accepted and complete. Phase F2 ready for execution.
+
+---
+
+## 2026-09-27
+
+### Frontend Phase F2 — Monetary Operations: COMPLETED
+
+Phase F2 implemented the complete monetary operations feature set, including the Deposit, Withdrawal, and Account Transfer workflows, pre-flight monetary input validation, transaction mutation hooks, integration into the Account Overview page, accessible modal dialogs, and authoritative balance cache invalidation. All implementations strictly observe `FRONTEND_PRD.md`, `FRONTEND_TRD.md`, `DESIGN.md`, `FRONTEND_ARCHITECTURE.md`, `API_GUIDELINES.md`, and the approved Phase F2 Implementation Plan.
+
+#### What Was Completed & Verified
+
+**Deposit Workflow (`DepositModal`)**
+- Implemented `DepositModal` at `src/features/transactions/components/DepositModal.tsx` invoking `POST /accounts/{accountId}/deposit` via `useDeposit` mutation hook.
+- Enforced pre-flight client-side monetary validation via `validateMonetaryAmount()`.
+- Implemented duplicate submission protection (inputs and buttons disabled during `isPending`, keyboard form submission lock).
+- Handled backend error responses (400 validation, 404 account not found, 422 business rules, 500 server error, network errors) via normalized `ErrorDisplay`, preserving modal and input state for user correction.
+- On success: closed modal, triggered success toast displaying the authoritative transaction reference number and formatted amount, and invalidated the authoritative balance query cache.
+
+**Withdrawal Workflow (`WithdrawalModal`)**
+- Implemented `WithdrawalModal` at `src/features/transactions/components/WithdrawalModal.tsx` invoking `POST /accounts/{accountId}/withdrawal` via `useWithdrawal` mutation hook.
+- Standard primary action styling enforced per `DESIGN.md §9, §28.2`: withdrawal is a standard financial operation and does NOT use destructive red button styling.
+- Preserved server authority: the frontend does NOT compare the withdrawal amount against cached balances; the backend database lock and balance computation is the sole financial authority.
+- Handled backend 422 business rule violations (`InsufficientFundsException`, `AccountNotEligibleForTransactionException`) cleanly in an inline error banner without exposing technical stack traces.
+- On success: closed modal, announced success toast with transaction reference number and formatted amount, and invalidated authoritative balance query cache.
+
+**Transfer Workflow (`TransferModal`)**
+- Implemented `TransferModal` at `src/features/transactions/components/TransferModal.tsx` invoking `POST /transfers` via `useTransfer` mutation hook.
+- Source account fixed from current account context (`account.accountNumber`, `account.accountName`).
+- Destination selector populated from `useAccounts({ status: AccountStatus.ACTIVE })` query.
+- Strict account filtering:
+  - `SYS-CASH` is strictly excluded from destination options (`acc.accountNumber !== 'SYS-CASH'`).
+  - Source account is strictly excluded from destination options (`acc.id !== account.id`).
+  - Only `ACTIVE` customer accounts are selectable.
+- UI displays user-friendly account label (`{accountNumber} — {accountName}`) while submitting the numeric backend account ID.
+- Counterparty and amount validation: validates destination selection, blocks same-account transfers, and enforces monetary bounds.
+- Dual balance cache invalidation: on success, invalidates authoritative balance queries for BOTH source and destination accounts (`auditKeys.balance(sourceAccountId, null)` and `auditKeys.balance(destinationAccountId, null)`).
+- Handled backend 422 responses (`InsufficientFundsException`, `InvalidTransferException`, `AccountNotEligibleForTransactionException`).
+
+**Monetary Input Validation (`validateMonetaryAmount`)**
+- Implemented `src/utils/validation.ts` with `MONETARY_REGEX = /^\d+(\.\d{1,2})?$/`.
+- Enforces backend `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` rules:
+  - Rejects empty, whitespace-only, zero (`0`, `0.00`), negative values, alphabetic characters, currency symbols (`₹`, `$`), scientific notation, multiple decimal points, >2 decimal places, and >17 integer digits (with proper leading-zero handling).
+  - Accepts positive integers, 1- or 2-decimal numbers, minimum boundary `0.01`, and maximum 17-integer-digit boundaries.
+- Zero floating-point conversions or arithmetic; parses validated input into a precision-safe `Money` value object.
+
+**Account Overview Integration (`AccountOverviewPage`)**
+- Added "Monetary Operations" card to the right-hand column of `AccountOverviewPage`.
+- Action buttons ("Deposit Funds", "Withdraw Funds", "Transfer Funds") enabled strictly when `account.status === AccountStatus.ACTIVE`.
+- Status-gated for non-active accounts: monetary operations are suspended with an informative message when `FROZEN`, and marked unavailable when `CLOSED`.
+- Integrated modal state management cleanly without altering unrelated F1 account overview logic.
+
+**Financial Correctness & Architectural Invariants Maintained**
+- Zero client-side balance calculations, running balance derivations, or double-entry arithmetic.
+- Zero optimistic balance updates (`queryClient.setQueryData()` is never called for financial state).
+- Targeted cache invalidation: monetary mutations invalidate strictly `auditKeys.balance` queries; `accountKeys.detail()` and `accountKeys.lists()` are not unnecessarily invalidated because `AccountResponse` contains no financial state.
+- Exact monetary wire handling preserved: request amounts serialized via `Money.toWireString()`; response amounts ingested via `Money.fromWire(response.amount).format()`.
+- Strict decimal precision: zero usage of `Number()`, `parseFloat()`, or JavaScript floating-point arithmetic on monetary values.
+- Zero `/api/v1` prefix occurrences.
+- Backend code remained completely untouched (`git diff -- backend/` is 100% empty).
+
+#### Verification Result
+
+```text
+Automated Tests:   123/123 passed across 9 test files (0 failures)
+                   - src/utils/__tests__/date.test.ts (18 tests)
+                   - src/utils/__tests__/validation.test.ts (23 tests)
+                   - src/utils/__tests__/money.test.ts (34 tests)
+                   - src/api/__tests__/client.test.ts (12 tests)
+                   - src/features/transactions/api/__tests__/transactionMutations.test.tsx (6 tests)
+                   - src/features/accounts/pages/__tests__/AccountOverviewPage.test.tsx (6 tests)
+                   - src/features/transactions/components/__tests__/WithdrawalModal.test.tsx (9 tests)
+                   - src/features/transactions/components/__tests__/DepositModal.test.tsx (9 tests)
+                   - src/features/transactions/components/__tests__/TransferModal.test.tsx (6 tests)
+TypeScript:        PASS (tsc --noEmit, 0 errors)
+ESLint:            PASS on F2 files (0 errors, 0 warnings)
+Production Build:  PASS (tsc -b && vite build — optimized static bundle in 2.38s)
+Manual E2E:        PASS in running browser:
+                   - Accounts page loads correctly
+                   - Active account overview displays balance and monetary action buttons
+                   - Deposit modal validates amount and submits successfully
+                   - Withdrawal modal validates amount, uses primary styling, and submits successfully
+                   - Transfer modal lists active accounts, excludes SYS-CASH and source account, and submits successfully
+                   - Authoritative balances refresh automatically following successful mutations
+                   - Success toasts display formatted amounts and reference numbers
+                   - Pre-flight validation rejects invalid monetary inputs (0, negative, >2 decimals, empty)
+                   - Backend errors (422 Insufficient Funds, 422 Ineligible Account) display cleanly and preserve input state
+                   - Frozen and closed accounts disallow monetary operations
+Backend Diff:      Completely clean / untouched (0 modifications)
+```
+
+#### Architectural Boundary
+
+Phase F2 intentionally does NOT contain:
+- Transaction history, ledger entry journal, or event stream tabs (Phase F3)
+- Audit trail view or historical balance reconstruction (`asOf`) (Phase F4)
+- Dashboard aggregation metrics or quick actions (Phase F5)
+- Authentication or user management (out of scope for v1.0)
+- Backend code modifications (`git diff -- backend/` is completely empty)
+
+Phase F2 accepted and complete. Phase F3 ready for execution.

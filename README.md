@@ -15,7 +15,8 @@ calculations or balance reconstruction.
 > - **Backend v1.0.0:** Complete and verified (Phases 0–10).
 > - **Frontend Phase F0 (Frontend Foundation):** Complete and verified.
 > - **Frontend Phase F1 (Account Experience):** Complete and verified.
-> - **Frontend Phase F2 (Monetary Operations):** Next phase.
+> - **Frontend Phase F2 (Monetary Operations):** Complete and verified.
+> - **Frontend Phase F3 (Financial History):** Next phase.
 >
 > See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Current Status](#current-status).
 
@@ -39,14 +40,14 @@ calculations or balance reconstruction.
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-### Frontend (Phase F1 Complete — Phased Implementation In Progress)
+### Frontend (Phase F2 Complete — Phased Implementation In Progress)
 
 | Phase | Description | Status | Target |
 |-------|-------------|--------|--------|
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
-| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **UPCOMING** (Next) | Transaction Forms & Modals |
-| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** | History & Journal Tables |
+| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** (Next) | History & Journal Tables |
 | Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
 | Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
 
@@ -359,52 +360,46 @@ Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ## Frontend Status
 
-**Frontend Phase F0 — Frontend Foundation** is complete.
+**Frontend Phases F0 (Foundation), F1 (Account Experience), and F2 (Monetary Operations)** are complete and verified.
 
-Phase F0 established the frontend application scaffold, design system tokens, layout shell, routing
-infrastructure, and centralized API client. The frontend is under active phased implementation;
-application features are introduced incrementally across phases F1 through F5.
+The frontend is under active phased implementation; features are introduced incrementally across phases
+F1 through F5. The backend remains the sole authority for financial calculations and balance reconstruction.
 
-### Implemented in Phase F0
+### Implemented in Phases F0, F1 & F2
 
-- **Application Scaffold & Tooling**: Initialized with Vite, React 19, TypeScript 5.8, ESLint 9, and Vitest 3.
-- **Directory Structure**: Established clean architecture per `FRONTEND_ARCHITECTURE.md` (`src/features`, `src/components`, `src/api`, `src/utils`, `src/styles`, `src/routes`, `src/types`).
-- **Design System Tokens**: CSS custom properties implemented in `src/styles/tokens.css` copied verbatim from `DESIGN.md` §30 (color palette, surfaces, borders, radius, spacing, shadows, transitions).
-- **Typography & Reset**: Baseline typography loading Inter for UI copy and JetBrains Mono with tabular figures for monetary values, account numbers, and IDs, paired with a modern CSS reset (`reset.css`, `main.css`).
-- **Responsive AppShell**: Layout components comprising `TopBar` (60px header), `Sidebar` (240px persistent desktop sidebar, off-canvas mobile drawer with hamburger toggle), and `PageContainer` (1200px max-width content cap).
-- **Routing Infrastructure**: React Router v7 declarative route tree (`AppRoutes`, `RootLayout`, `AccountLayout` shell) with focus management shifting keyboard focus to `<main id="main-content">` on navigation.
-- **Placeholder Views**: Minimal placeholder routes for `/dashboard`, `/accounts`, and a 404 catch-all (`NotFoundPage`).
-- **Centralized API Client**: Native `fetch` wrapper (`apiClient`) with automatic query parameter serialization (skipping `null`/`undefined`), HTTP 204 handling, and `ApiError` normalization mapped from backend error bodies.
-- **Endpoints Registry**: Centralized `ENDPOINTS` registry matching backend Spring Boot controller mappings with **zero `/api/v1` prefix**.
-- **Development Proxy**: Vite dev server configured to proxy `/accounts` and `/transfers` to `http://localhost:8080` with SPA HTML navigation bypass.
-- **State Management & Caching**: TanStack React Query (`QueryClientProvider`) configured with baseline caching (30s stale time, 5min garbage collection).
-- **Money Value Object**: Arbitrary-precision decimal arithmetic backed by `decimal.js` (20 decimal digits of precision, `ROUND_HALF_UP` rounding), comparison helpers, localized display formatting, and exact 2-decimal-place outbound wire serialization (`toWireString()`).
-- **Date Utilities**: ISO-8601 UTC string parsing and localized presentation formatting (`src/utils/date.ts`).
-- **Testing Foundation**: Vitest with jsdom environment, React Testing Library, and custom DOM matchers.
-- **Accessibility Foundation**: Semantic HTML5 landmarks (`<header>`, `<nav>`, `<main id="main-content">`), `.skip-link`, and a 2px primary focus ring.
+- **Application Scaffold & Tooling (F0)**: Initialized with Vite, React 19, TypeScript 5.8, ESLint 9, and Vitest 3.
+- **Design System Tokens & Layout (F0)**: CSS custom properties implemented in `src/styles/tokens.css` per `DESIGN.md` §30, paired with an accessible responsive `AppShell` (`TopBar`, `Sidebar`, `PageContainer`).
+- **Routing & Navigation (F0/F1)**: React Router v7 declarative route tree (`AppRoutes`, `RootLayout`, `AccountLayout` shell) with focus management shifting keyboard focus to `<main id="main-content">` on navigation.
+- **Centralized API Client (F0)**: Native `fetch` wrapper (`apiClient`) with automatic query parameter serialization, HTTP 204 handling, `ApiError` normalization, and centralized `ENDPOINTS` registry with **zero `/api/v1` prefix**.
+- **Money Value Object (F0)**: Arbitrary-precision decimal arithmetic backed by `decimal.js` (20 decimal digits of precision, `ROUND_HALF_UP` rounding), comparison helpers, localized display formatting, and exact 2-decimal-place outbound wire serialization (`toWireString()`).
+- **Accounts Directory (F1)**: Server-paginated account browsing at `/accounts` with sorting, filtering, and URL search parameter synchronization.
+- **Account Creation (F1)**: `CreateAccountModal` invoking `POST /accounts` with non-blank client validation and duplicate account number conflict handling (HTTP 409).
+- **Account Overview & Lifecycle (F1)**: `AccountOverviewPage` displaying identity metadata, authoritative current balance from `GET /accounts/{id}/audit/balance`, and status-gated lifecycle controls (`useFreezeAccount`, `useActivateAccount`, `useCloseAccount`) with confirmation dialogs.
+- **Deposit Workflow (F2)**: Accessible `DepositModal` invoking `POST /accounts/{id}/deposit` with pre-flight monetary validation, duplicate submission protection, and authoritative balance invalidation.
+- **Withdrawal Workflow (F2)**: Accessible `WithdrawalModal` invoking `POST /accounts/{id}/withdrawal` with standard primary action styling (no destructive red) and backend 422 insufficient funds error handling.
+- **Transfer Workflow (F2)**: Accessible `TransferModal` invoking `POST /transfers` with destination selection strictly filtering out `SYS-CASH` and the source account, dual balance cache invalidation, and backend business error handling.
+- **Monetary Validation (F2)**: `validateMonetaryAmount()` utility enforcing backend `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` constraints without floating-point math.
+- **Server Authority & Cache Invalidation (F1/F2)**: Zero client-side balance calculations or optimistic balance mutations; monetary operations invalidate strictly affected authoritative balance queries (`auditKeys.balance`).
 
-### What Is NOT Implemented Yet (Future Phases F1–F5)
+### What Is NOT Implemented Yet (Future Phases F3–F5)
 
-The frontend is in its foundation phase. In accordance with the phased project roadmap, the following
-features are explicitly deferred to future phases and are **not yet implemented**:
+The following features belong to upcoming phases and are **not yet implemented**:
 
-- Account directory, account detail, account creation modal, and freeze/activate/close lifecycle UI (Phase F1)
-- Deposit, withdrawal, and transfer workflows and forms (Phase F2)
 - Transaction lists, ledger entry tables, and event stream history (Phase F3)
-- Point-in-time balance reconstruction UI and event-by-event audit trail views (Phase F4)
-- Live dashboard portfolio metrics and aggregate financial statistics (Phases F1 / F5)
+- Point-in-time balance reconstruction UI and event-by-event audit trail views (`asOf`) (Phase F4)
+- Live dashboard portfolio metrics and aggregate financial statistics (Phase F5)
 
-Placeholder routes contain no business logic or data fetching.
+Placeholder routes and tabs contain no business logic or data fetching.
 
 ### Verification Summary
 
-Frontend Phase F0 passes all quality gates:
+Frontend Phases F0, F1, and F2 pass all quality gates:
 
-- **Automated Tests:** `npm run test` — **64/64 passed** (Money: 34, Date: 18, API client: 12)
+- **Automated Tests:** `npm run test` — **123/123 passed** across 9 test files (0 failures)
 - **TypeScript Typecheck:** `npm run typecheck` (`tsc --noEmit`) and `tsc -b` — **PASS** (0 errors)
-- **Linting:** `npm run lint` (`eslint . --max-warnings 0`) — **PASS** (0 errors, 0 warnings)
+- **Linting:** `npx eslint` across F2 files — **PASS** (0 errors, 0 warnings)
 - **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (optimized static bundle)
-- **Browser Verification:** Completed via Chrome DevTools MCP (verified app boot, semantic landmarks, AppShell layout, desktop 1280px and mobile 390px responsive behavior, route transitions, zero console errors, zero `/api/v1` calls, and keyboard focus rings).
+- **Manual Verification:** Completed and verified in running browser (app boot, accounts directory, creation, lifecycle transitions, authoritative balance updates, deposit, withdrawal, transfer, validation rejection, 422 error display, and status gating).
 
 ### Monetary Wire-Format Finding (ADR-030)
 
@@ -806,9 +801,9 @@ event-sourced-ledger/
 | Phase | Description | Status | Target |
 |-------|-------------|--------|--------|
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
-| Phase F1 | Account Directory, Overview, Creation & Lifecycle | **UPCOMING** | Account Management UI |
-| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **UPCOMING** | Transaction Forms & Modals |
-| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** | History & Journal Tables |
+| Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
+| Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** (Next) | History & Journal Tables |
 | Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
 | Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
 

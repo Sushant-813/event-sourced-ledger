@@ -57,7 +57,9 @@ export enum TransactionType {
  * API_GUIDELINES.md §21.
  */
 export enum TransactionStatus {
+  PENDING = 'PENDING',
   COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
 }
 
 /**

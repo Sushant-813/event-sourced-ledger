@@ -6,7 +6,9 @@
 - **Backend (Phases 0–10):** COMPLETED — v1.0.0 RELEASED (2026-09-21)  
 - **Frontend Planning & Documentation:** COMPLETED (2026-09-23)  
 - **Frontend Phase F0 — Frontend Foundation:** COMPLETED (2026-09-23)  
-- **Frontend Implementation (Phases F1–F5):** NEXT / READY FOR EXECUTION (Phase F1 Next)  
+- **Frontend Phase F1 — Account Experience:** COMPLETED (2026-09-23)  
+- **Frontend Phase F2 — Monetary Operations:** COMPLETED (2026-09-27)  
+- **Frontend Implementation (Phases F3–F5):** NEXT / READY FOR EXECUTION (Phase F3 Next)  
 - **Future Enhancements:** DEFERRED / POST-v1.0  
 
 ---
@@ -43,7 +45,7 @@ The project adheres to these core architectural and execution principles:
 ### 3.1 What is Covered
 - **Backend Core**: Event store, double-entry ledger, balance reconstruction, audit trail, pagination/sorting/filtering, pessimistic row locking, and REST APIs (**COMPLETED v1.0.0**).
 - **Frontend Planning**: Frozen PRD, TRD, Design System tokens, and Frontend Architecture (**COMPLETED**).
-- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Feature Phases F1–F5 UPCOMING (Phase F1 Account Experience Next).
+- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Feature Phases F3–F5 UPCOMING (Phase F3 Financial History Next).
 
 ### 3.2 What is Intentionally Deferred (Post-v1.0)
 - User authentication and Role-Based Access Control (RBAC).
@@ -437,24 +439,43 @@ Implement account portfolio browsing, account creation, account detail routing, 
 
 ## Phase F2 — Monetary Operations
 
+**Status: COMPLETED — 2026-09-27**
+
 ### Objective
 Implement monetary transaction workflows for deposits, withdrawals, and account-to-account transfers with strict decimal safety.
 
-### Deliverables
-- Deposit modal/workflow (`POST /accounts/{accountId}/deposit`) with 2-decimal pre-flight validation.
-- Withdrawal modal/workflow (`POST /accounts/{accountId}/withdrawal`) with positive amount validation.
-- Transfer workflow modal (`POST /transfers`) with source/destination account selection (excluding `SYS-CASH`) and amount input.
-- Dual submission prevention (button disablement on `isPending`, keyboard form lock).
-- Integration with backend business validation (handling HTTP 400, 409 Insufficient Funds, 409 Account Frozen/Closed, 422).
-- Post-mutation cache invalidation triggering authoritative balance re-fetch (zero optimistic balance updates).
-- Non-blocking toast notifications for transaction success with reference numbers.
+### Deliverables Completed
+- Deposit modal/workflow (`DepositModal`, `POST /accounts/{accountId}/deposit`) with pre-flight monetary validation.
+- Withdrawal modal/workflow (`WithdrawalModal`, `POST /accounts/{accountId}/withdrawal`) with positive amount validation and standard primary action styling (no destructive red).
+- Transfer workflow modal (`TransferModal`, `POST /transfers`) with active account destination selector (excluding `SYS-CASH` and source account) and counterparty amount input.
+- Monetary validation utility (`src/utils/validation.ts`, `validateMonetaryAmount`) enforcing `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` constraints without floating-point math.
+- Dual submission prevention (button disablement on `isPending`, input locks, keyboard form submission lock).
+- Integration with backend business validation (handling HTTP 400, 404, 422 Insufficient Funds, 422 Ineligible Account, 422 Invalid Transfer).
+- Targeted post-mutation cache invalidation triggering authoritative balance re-fetch (`auditKeys.balance`) for affected accounts (zero optimistic updates; no redundant invalidation of account lists or details).
+- Non-blocking toast notifications for transaction success with authoritative reference numbers.
+- Strict monetary precision invariants maintained: zero `Number()`/`parseFloat()` conversions; exact wire serialization via `Money.toWireString()` and `Money.fromWire()`.
+- Integration into `AccountOverviewPage` with monetary action buttons status-gated strictly to `ACTIVE` accounts.
 
-### Success Criteria
-Monetary operations execute accurately, prevent duplicate clicks, present backend business validation errors clearly, and refresh authoritative balances without optimistic calculation.
+### Explicit Scope Exclusions (F3+ Features NOT Implemented in F2)
+- Transaction history lists and tables are NOT implemented (deferred to F3).
+- Double-entry ledger entry journal views are NOT implemented (deferred to F3).
+- Event stream inspection and raw event drawers are NOT implemented (deferred to F3).
+- Audit trail view and historical balance reconstruction (`asOf`) are NOT implemented (deferred to F4).
+- Dashboard aggregate metrics and shortcuts are NOT implemented (deferred to F5).
+- Backend code was NOT modified (`git diff -- backend/` is completely empty).
+
+### Verification Gates Passed
+- **Automated Tests:** `npm test` — **123/123 passed** across 9 test files (including 23 validation tests, 6 mutation hook tests, 9 deposit tests, 9 withdrawal tests, 6 transfer tests, and 6 overview integration tests).
+- **TypeScript Typecheck:** `npm run typecheck` — **PASS** (0 errors).
+- **ESLint:** `npx eslint` across F2 files — **PASS** (0 errors, 0 warnings).
+- **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (clean production bundle generated).
+- **Manual Verification:** **PASS** (deposit, withdrawal, transfer, authoritative balance refresh, reference-number toasts, validation rejection, 422 error display and state preservation, SYS-CASH exclusion, source-account exclusion, and closed/frozen account status gating).
 
 ---
 
 ## Phase F3 — Financial History
+
+**Status: NEXT / READY FOR EXECUTION**
 
 ### Objective
 Implement immutable financial history inspection views scoped to the active account.
@@ -522,8 +543,8 @@ Dashboard accurately displays portfolio counts, UI is fully responsive and keybo
 | :--- | :--- | :--- | :--- |
 | **MF0** | Project Shell, Routing, Styling Tokens & API Foundation | COMPLETED (2026-09-23) | Phase F0 |
 | **MF1** | Account Directory, Overview, Creation & Lifecycle | COMPLETED (2026-09-23) | Phase F1 |
-| **MF2** | Deposit, Withdrawal & Transfer Workflows | UPCOMING (Next) | Phase F2 |
-| **MF3** | Transactions, Ledger Entries & Event Stream History | UPCOMING | Phase F3 |
+| **MF2** | Deposit, Withdrawal & Transfer Workflows | COMPLETED (2026-09-27) | Phase F2 |
+| **MF3** | Transactions, Ledger Entries & Event Stream History | UPCOMING (Next) | Phase F3 |
 | **MF4** | Audit Trail & Historical Balance Reconstruction (`asOf`) | UPCOMING | Phase F4 |
 | **MF5** | Dashboard, Responsive / A11y Polish & End-to-End Validation | UPCOMING | Phase F5 |
 

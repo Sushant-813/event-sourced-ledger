@@ -21,6 +21,9 @@ import { useToast } from '@/hooks/useToast'
 import { formatTimestamp } from '@/utils/date'
 import { isBusinessRuleViolation, isApiError } from '@/api/errors'
 import { AccountStatus } from '@/types/enums'
+import { DepositModal } from '@/features/transactions/components/DepositModal'
+import { WithdrawalModal } from '@/features/transactions/components/WithdrawalModal'
+import { TransferModal } from '@/features/transactions/components/TransferModal'
 
 export const AccountOverviewPage: React.FC = () => {
   const {
@@ -35,6 +38,9 @@ export const AccountOverviewPage: React.FC = () => {
 
   const [isFreezeDialogOpen, setIsFreezeDialogOpen] = useState(false)
   const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false)
+  const [isDepositOpen, setIsDepositOpen] = useState(false)
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
+  const [isTransferOpen, setIsTransferOpen] = useState(false)
 
   const { mutateAsync: freezeAccount, isPending: isFreezePending } = useFreezeAccount()
   const { mutateAsync: activateAccount, isPending: isActivatePending } = useActivateAccount()
@@ -227,8 +233,65 @@ export const AccountOverviewPage: React.FC = () => {
           </section>
         </div>
 
-        {/* Right Column: Lifecycle Operations */}
+        {/* Right Column: Operations */}
         <div className="account-overview__secondary-col">
+          {/* Monetary Operations Card */}
+          <section className="account-overview-card" aria-labelledby="monetary-card-title">
+            <div className="account-overview-card__header">
+              <h2 id="monetary-card-title" className="account-overview-card__title">
+                Monetary Operations
+              </h2>
+            </div>
+
+            <div className="account-overview__lifecycle-body">
+              {account.status === AccountStatus.ACTIVE ? (
+                <div className="account-overview__action-group">
+                  <p className="account-overview__action-description text-muted">
+                    Execute balance-affecting monetary operations with strict ledger integrity.
+                  </p>
+
+                  <div className="account-overview__button-stack">
+                    <button
+                      type="button"
+                      onClick={() => setIsDepositOpen(true)}
+                      className="account-overview__btn account-overview__btn--primary"
+                      data-testid="open-deposit-button"
+                    >
+                      Deposit Funds
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsWithdrawOpen(true)}
+                      className="account-overview__btn account-overview__btn--primary"
+                      data-testid="open-withdrawal-button"
+                    >
+                      Withdraw Funds
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsTransferOpen(true)}
+                      className="account-overview__btn account-overview__btn--primary"
+                      data-testid="open-transfer-button"
+                    >
+                      Transfer Funds
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="account-overview__action-group">
+                  <p className="account-overview__action-description text-muted">
+                    {account.status === AccountStatus.FROZEN
+                      ? 'Monetary operations are suspended while the account is frozen.'
+                      : 'Monetary operations are unavailable for closed accounts.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Lifecycle Actions Card */}
           <section className="account-overview-card" aria-labelledby="lifecycle-card-title">
             <div className="account-overview-card__header">
               <h2 id="lifecycle-card-title" className="account-overview-card__title">
@@ -336,6 +399,25 @@ export const AccountOverviewPage: React.FC = () => {
         accountName={account.accountName}
         accountNumber={account.accountNumber}
         isPending={isClosePending}
+      />
+
+      {/* Monetary Operation Modals */}
+      <DepositModal
+        isOpen={isDepositOpen}
+        onClose={() => setIsDepositOpen(false)}
+        account={account}
+      />
+
+      <WithdrawalModal
+        isOpen={isWithdrawOpen}
+        onClose={() => setIsWithdrawOpen(false)}
+        account={account}
+      />
+
+      <TransferModal
+        isOpen={isTransferOpen}
+        onClose={() => setIsTransferOpen(false)}
+        account={account}
       />
 
       <style>{`
