@@ -1948,6 +1948,113 @@ Negative
 
 ---
 
+# ADR-031
+
+## Title
+
+Frontend Monetary Operations: Exact Decimal Handling, Server Financial Authority, Targeted Query Invalidation, and Counterparty Isolation
+
+### Status
+
+Accepted
+
+### Context
+
+Frontend Phase F2 introduces monetary transaction workflows:
+1. Deposit (`POST /accounts/{accountId}/deposit`)
+2. Withdrawal (`POST /accounts/{accountId}/withdrawal`)
+3. Account-to-Account Transfer (`POST /transfers`)
+
+In a financial system governed by double-entry accounting and event sourcing, client-side monetary interactions introduce critical architectural challenges:
+
+1. **Floating-Point Hazard & Validation Boundaries:** JavaScript's native IEEE-754 `Number` type cannot represent base-10 decimals accurately. User input must be strictly validated before transmission to mirror backend `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` constraints without numeric float coercion.
+2. **Server-Authoritative Financial State:** The frontend operates on read-model representations of derived balances. If the frontend attempts to calculate running balances, maintain local ledger models, or evaluate balance sufficiency before withdrawals/transfers, it risks synchronization drift, race conditions with concurrent transactions, and violating the core premise that the server's database lock and event store are the sole financial authority.
+3. **Cache Invalidation Precision:** TanStack React Query maintains client-side query caches. After a successful monetary transaction, invalidating too broadly (e.g. `['accounts']` or account metadata queries) causes unnecessary network refetches and UI re-renders, while invalidating too narrowly or optimistically modifying balances client-side risks displaying unverified financial totals.
+4. **Counterparty & System Account Isolation:** Transfer operations involve a source account and a destination account. The system contra-account `SYS-CASH` must never be exposed as an eligible customer transfer destination (ADR-024, ADR-026), an account cannot transfer to itself, and non-active accounts must not participate in transfers.
+5. **Duplicate Submission Vulnerability:** Monetary transactions mutate the ledger. Double-clicking a submit button or rapid keyboard submissions while a mutation is pending could dispatch multiple requests, resulting in unintended duplicate debits or credits.
+6. **Business Rule Error Semantics (HTTP 422 vs. 409):** The backend returns HTTP 422 Unprocessable Entity for business-rule violations (`InsufficientFundsException`, `AccountNotEligibleForTransactionException`, `InvalidTransferException`), whereas HTTP 409 Conflict is reserved exclusively for duplicate account numbers. The frontend must correctly handle HTTP 422 responses without closing dialogs or losing entered form state.
+
+### Decision
+
+1. **Exact Monetary Pipeline on Frontend:**
+   - User-entered monetary amounts are processed through a strict unidirectional pipeline:
+     $$\text{rawInput} \rightarrow \text{validateMonetaryAmount()} \rightarrow \text{Money.fromInput()} \rightarrow \text{Money.toWireString()} \rightarrow \text{API}$$
+   - Validation is implemented in `src/utils/validation.ts` using `MONETARY_REGEX = /^\d+(\.\d{1,2})?$/`. It rejects non-numeric characters, currency symbols, whitespace, negative amounts, zero, multiple decimal points, $>2$ decimal places, and $>17$ integer digits (after stripping leading zeros).
+   - Zero JavaScript floating-point conversions (`Number()`, `parseFloat()`, `.toFixed()`) or arithmetic operators (`+`, `-`, `*`, `/`) are permitted on monetary quantities.
+   - Outbound wire payloads serialize amounts as exact 2-decimal strings (e.g., `"100.50"`).
+   - Inbound API response amounts are consumed defensively via `Money.fromWire(response.amount).format()` using `decimal.js`.
+
+2. **Absolute Server Financial Authority (Zero Client Balance Logic):**
+   - The frontend NEVER calculates account balances, derives running totals, predicts post-transaction balances, or executes client-side double-entry logic.
+   - The frontend NEVER checks the withdrawal or transfer amount against the cached current balance to block submission. The backend's pessimistic row lock (`PESSIMISTIC_WRITE`) and balance calculation engine remain the sole authority for evaluating fund sufficiency.
+   - Zero optimistic updates: `queryClient.setQueryData()` is strictly forbidden for financial balances.
+
+3. **Targeted React Query Balance Invalidation:**
+   - On mutation success, the frontend invalidates strictly the authoritative balance query:
+     - **Deposit Success:** invalidates `auditKeys.balance(accountId, null)`.
+     - **Withdrawal Success:** invalidates `auditKeys.balance(accountId, null)`.
+     - **Transfer Success:** invalidates BOTH affected balance queries:
+       `auditKeys.balance(sourceAccountId, null)` and `auditKeys.balance(destinationAccountId, null)`.
+   - Account metadata queries (`accountKeys.detail()`, `accountKeys.lists()`) are NOT invalidated because monetary operations do not modify `AccountResponse` metadata fields.
+
+4. **Transfer Counterparty Isolation & Account Gating:**
+   - Destination account selection in `TransferModal` filters candidate accounts returned by `useAccounts`:
+     - Excludes `SYS-CASH` (`acc.accountNumber !== 'SYS-CASH'`).
+     - Excludes the current source account (`acc.id !== account.id`).
+     - Includes only `ACTIVE` customer accounts (`acc.status === AccountStatus.ACTIVE`).
+   - The UI presents user-friendly identifiers (`{accountNumber} — {accountName}`) while submitting the numeric database `destinationAccountId`.
+   - Account Overview page action buttons ("Deposit Funds", "Withdraw Funds", "Transfer Funds") are conditionally rendered only when `account.status === AccountStatus.ACTIVE`.
+
+5. **Multi-Layer Duplicate Submission Protection:**
+   - While a monetary mutation is in flight (`isPending === true`):
+     - Form input fields and select dropdowns are disabled.
+     - Action buttons (Submit, Cancel, Close) are disabled and display inline loading spinners.
+     - Form `handleSubmit` explicitly aborts if `isPending` is true, preventing duplicate Enter key submissions.
+     - Modal dismiss/close handlers abort if `isPending` is true.
+
+6. **Standard Primary Styling for Withdrawals:**
+   - Withdrawal is treated as a routine financial command, not a destructive administrative action.
+   - The withdrawal submit button uses standard primary styling (`monetary-form__btn--primary` with `--color-primary`), conforming to `DESIGN.md §9, §28.2`. Destructive red styling is reserved exclusively for permanent terminal account closures.
+
+7. **Normalized Error Handling (HTTP 422 vs. HTTP 409):**
+   - Domain business-rule rejections from the backend return HTTP 422 Unprocessable Entity (`InsufficientFundsException`, `AccountNotEligibleForTransactionException`, `InvalidTransferException`). HTTP 409 is not used for monetary operations.
+   - On API error (HTTP 400, 404, 422, 500, or network failure), modals remain open, user input is preserved, and the normalized error message is displayed in an accessible `ErrorDisplay` banner allowing correction and retry.
+
+### Alternatives Considered
+
+- **Client-Side Insufficient Funds Pre-Validation:** Rejected because client balance caches are inherently asynchronous and stale under concurrent operations. Performing a client-side sufficiency check creates false rejections or false approvals, usurping backend pessimistic lock authority.
+- **Optimistic Financial Balance Updates:** Rejected because double-entry ledger balance updates are authoritative results of persisted events. Synthesizing balances client-side risks displaying incorrect state that must subsequently be rolled back on server failure.
+- **Invalidating Account Metadata Queries Post-Transaction:** Rejected because `AccountResponse` contains only identity/status metadata (which is unmodified by deposits, withdrawals, or transfers). Invalidating account details and lists creates redundant network traffic and unnecessary component re-renders.
+- **Destructive Red Styling on Withdrawal Modal:** Rejected per DESIGN.md §9 and §28.2. Withdrawal is an authorized customer banking operation, not an irreversible administrative deletion.
+- **Custom Client Account Number Input for Transfers:** Rejected because requiring users to manually type destination account numbers invites typo errors and requires complex asynchronous lookup debouncing. A filtered dropdown bound to active customer accounts guarantees valid counterparty selection while keeping `SYS-CASH` completely unselectable.
+
+### Rationale
+
+This decision establishes a clear division of responsibility between client and server: the frontend provides accessible, validated input capture, defensive error handling, and reactive display, while the backend maintains exclusive authority over financial rules, concurrency control, and balance derivations.
+
+Targeting query invalidation strictly to affected authoritative balance queries honors the server-authoritative model while maximizing client performance and preventing UI flicker.
+
+Enforcing strict decimal validation and serialization ensures that client interactions never corrupt the monetary precision required by double-entry accounting.
+
+### Consequences
+
+Positive
+
+- Absolute monetary precision preserved end-to-end without floating-point distortion.
+- Financial balances remain 100% server-authoritative and mathematically derived from immutable records.
+- Zero redundant network requests; only affected balance queries refetch after transactions.
+- Dual-party transfer cache invalidation guarantees both accounts display accurate balances immediately.
+- Complete protection against accidental duplicate submissions.
+- Strict isolation prevents `SYS-CASH` from ever being referenced in customer transfers.
+- Consistent, predictable error presentation preserving user input on failure.
+
+Negative
+
+- Balance updates require a network round-trip to re-fetch the authoritative balance from the server rather than updating instantaneously via optimistic UI state.
+- Transfer destination dropdown loads active customer accounts in bulk, which scales adequately for current scope but may require search/combobox pagination in future enterprise phases.
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.
