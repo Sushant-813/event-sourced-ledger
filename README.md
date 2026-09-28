@@ -17,7 +17,8 @@ calculations or balance reconstruction.
 > - **Frontend Phase F1 (Account Experience):** Complete and verified.
 > - **Frontend Phase F2 (Monetary Operations):** Complete and verified.
 > - **Frontend Phase F3 (Financial History):** Complete and verified.
-> - **Frontend Phase F4 (Audit Experience):** Next phase.
+> - **Frontend Phase F4 (Audit Experience):** Complete and verified.
+> - **Frontend Phase F5 (Dashboard & Release Readiness):** Next phase.
 >
 > See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Current Status](#current-status).
 
@@ -41,7 +42,7 @@ calculations or balance reconstruction.
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-### Frontend (Phase F3 Complete — Phased Implementation In Progress)
+### Frontend (Phase F4 Complete — Phased Implementation In Progress)
 
 | Phase | Description | Status | Target |
 |-------|-------------|--------|--------|
@@ -49,8 +50,8 @@ calculations or balance reconstruction.
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
 | Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
-| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** (Next) | Reconstructed Timeline & Trail |
-| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **COMPLETED** (2026-09-29) | Reconstructed Timeline & Trail |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** (Next) | Final Polish & Production Readiness |
 
 ### Phase 1 — Account Module (completed)
 
@@ -808,8 +809,8 @@ event-sourced-ledger/
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
 | Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
-| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** (Next) | Reconstructed Timeline & Trail |
-| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **COMPLETED** (2026-09-29) | Reconstructed Timeline & Trail |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** (Next) | Final Polish & Production Readiness |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and deliverables.
 

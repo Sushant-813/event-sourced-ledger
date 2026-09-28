@@ -10,7 +10,7 @@
  *   with expected components) rather than exact locale-formatted output.
  */
 import { describe, it, expect } from 'vitest'
-import { formatTimestamp, formatDate, normalizeAsOf, nowUtcIso } from '../date'
+import { formatTimestamp, formatDate, normalizeAsOf, nowUtcIso, toLocalDatetimeInputString } from '../date'
 
 describe('formatTimestamp()', () => {
   it('returns a non-empty string for a valid UTC ISO-8601 input', () => {
@@ -113,3 +113,33 @@ describe('nowUtcIso()', () => {
     expect(parsed).toBeLessThanOrEqual(after)
   })
 })
+
+describe('toLocalDatetimeInputString()', () => {
+  it('converts a UTC ISO-8601 string to local YYYY-MM-DDTHH:mm format', () => {
+    const iso = '2026-09-10T12:00:00.000Z'
+    const result = toLocalDatetimeInputString(iso)
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+
+    const date = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const expected = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    expect(result).toBe(expected)
+  })
+
+  it('returns empty string for null input', () => {
+    expect(toLocalDatetimeInputString(null)).toBe('')
+  })
+
+  it('returns empty string for undefined input', () => {
+    expect(toLocalDatetimeInputString(undefined)).toBe('')
+  })
+
+  it('returns empty string for empty string input', () => {
+    expect(toLocalDatetimeInputString('')).toBe('')
+  })
+
+  it('returns empty string for invalid date string', () => {
+    expect(toLocalDatetimeInputString('not-a-date')).toBe('')
+  })
+})
+

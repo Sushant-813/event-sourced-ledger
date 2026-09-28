@@ -2151,6 +2151,106 @@ Negative
 
 ---
 
+# ADR-033
+
+## Title
+
+Frontend Audit Experience Architecture: Single-Query Audit Projection, URL-Owned Temporal Reconstruction, Strict Boundary Normalization, and Server-Authoritative Running Balances
+
+### Status
+
+Accepted
+
+### Context
+
+Frontend Phase F4 introduces the audit experience and point-in-time balance reconstruction interface (`/accounts/:accountId/audit`).
+
+In an event-sourced double-entry ledger, presenting historical audit trails and temporal balance reconstructions introduces critical architectural hazards and correctness requirements:
+
+1. **Dual-Query Hazard vs. Unified Audit Response (Data Tearing & Race Conditions):**  
+   The backend exposes both `GET /accounts/{accountId}/audit/balance?asOf=...` and `GET /accounts/{accountId}/audit/trail?asOf=...`. A naive frontend implementation might issue two concurrent requests: one for the reconstructed balance card and one for the paginated audit table. Under concurrent transactions or clock drift, two separate queries risk executing against slightly different database states or cache intervals, causing the displayed balance card and the audit trail's running balance to disagree ("data tearing"). Furthermore, issuing two queries doubles server reconstruction overhead.
+
+2. **Client Arithmetic vs. Server Authority on Running Balances:**  
+   In an audit trail, each event row displays a `balanceChange` and a cumulative `runningBalance`. In standard web applications, there is a temptation to compute running balances in JavaScript by summing deltas across rows. However, when pagination is applied, a paginated slice (`size = 20`) lacks the historical context of earlier pages, making client-side accumulation impossible without loading the entire history. Even on page 1, client-side calculation violates the core architectural rule: the backend's ledger and event store are the sole authority for financial balance derivations.
+
+3. **Temporal Query Ownership and Deep-Link Reproducibility:**  
+   Point-in-time balance reconstruction relies on an `asOf` timestamp. If temporal state is managed in local component state (`useState`), browser refreshes, back/forward navigation, or sharing a URL causes the user to lose their historical reconstruction context. Moreover, navigating pagination pages while filtering by `asOf` must maintain the exact same cutoff point, whereas changing the `asOf` cutoff must reset the pagination index to page 1 to avoid landing on an out-of-range page.
+
+4. **Timezone Discrepancy & Boundary Normalization:**  
+   Users input dates and times using their local browser timezone via `<input type="datetime-local" />`. The backend event store persists timestamps in UTC with microsecond precision and evaluates historical cutoffs as an inclusive upper bound ($\text{occurredAt} \le \text{asOf}$). If the frontend transmits local time without timezone offsets or truncates boundary semantics, events occurring at or near the boundary are either erroneously omitted or included.
+
+5. **Pre-Creation Historical Boundary Handling:**  
+   If a user queries an `asOf` cutoff prior to the account's genesis event (`ACCOUNT_CREATED`), the backend returns an empty item list with `finalBalance = 0.00`. The frontend must represent this not as an error, missing account, or null balance, but as a mathematically valid financial reality ($0.00 balance before inception) with appropriate recovery guidance.
+
+6. **Pagination Invariant Display:**  
+   In ADR-029, the backend established that `finalBalance` reflects the full reconstructed history up to `asOf` regardless of pagination page, while `runningBalance` is absolute/cumulative. The frontend must preserve this stability: page transitions must not cause `finalBalance` to flicker or recalculate, and out-of-range page requests must preserve the balance card while providing clear pagination recovery.
+
+### Decision
+
+1. **Single-Query Audit Projection Architecture:**
+   - `AuditTrailPage` consumes `useAuditTrail(accountId, { page, size, asOf })`, issuing strictly a single HTTP request to `GET /accounts/{accountId}/audit/trail`.
+   - Zero secondary balance queries (`/audit/balance`) are dispatched by the audit view.
+   - `AuditBalanceCard` and `AuditTrailTable` derive their data strictly from the unified `AuditTrailResponse`, guaranteeing zero data tearing, half the network overhead, and perfect synchronization between the balance card and the audit trail rows.
+
+2. **Server-Authoritative Historical Projections (Zero Client Arithmetic):**
+   - The frontend performs ZERO client-side running balance accumulation, delta summation, or event replay.
+   - `finalBalance`, `runningBalance`, and `balanceChange` are treated as opaque, server-authoritative values.
+   - All monetary values are rendered safely via `Money.fromWire()` using `tabular-nums` formatting.
+   - Genesis events (`ACCOUNT_CREATED`) explicitly render `0.00` balance change.
+
+3. **URL-Owned Temporal and Pagination State:**
+   - `page`, `size`, and `asOf` are owned by URL search parameters (`useSearchParams`).
+   - State transitions adhere to deterministic rules:
+     - Submitting a new `asOf` updates the `asOf` search param and resets `page` to 1.
+     - Changing pagination pages preserves the active `asOf` cutoff and `size`.
+     - Resetting to current balance removes `asOf` from the URL and resets `page` to 1.
+   - Deep-linking, browser history navigation (Back/Forward), and bookmarks reproduce identical historical reconstructions.
+
+4. **Strict Temporal Normalization Pipeline:**
+   - User inputs from `<input type="datetime-local" />` are normalized to UTC ISO-8601 strings (`YYYY-MM-DDTHH:mm:ss.sssZ`) via `normalizeAsOf()` before URL synchronization and API transmission.
+   - UTC timestamps from the server or URL query params are converted to local browser format via `toLocalDatetimeInputString()` for input hydration.
+   - The UI displays an explicit boundary disclaimer: `"Includes all events where occurredAt <= asOf. Events sharing the identical boundary timestamp are included together."`
+
+5. **Pre-Creation Historical State Modeling:**
+   - When `asOf` precedes account creation (`totalElements === 0`, `items: []`, `finalBalance === "0.00"`), the UI renders an authoritative `₹0.00` balance card and an informative historical empty state with a "Reset to Current Balance" action, rather than an error or loading spinner.
+
+6. **Graceful Out-of-Range Pagination Handling:**
+   - Out-of-range page requests (e.g. `page > totalPages`) display the stable `finalBalance` card alongside an empty table state with a "Return to Page 1" button.
+
+7. **Immutability & Presentation Invariants:**
+   - Audit trail table enforces the canonical 7-column ordering per `DESIGN.md §12–13`:
+     `Occurred At | Event Type | Event ID | Reference # | Transaction ID | Balance Change (₹) | Running Balance (₹)`.
+   - Signed balance changes format with explicit `+` or `-` indicators using neutral typography (neither green nor red), honoring double-entry accounting neutrality.
+   - Immutability is absolute: zero edit, delete, rollback, or manual adjustment controls.
+
+### Alternatives Considered
+
+- **Dual-Query Balance and Trail Fetching:** Rejected. Issuing both `/audit/balance` and `/audit/trail` introduces cache race conditions, risk of UI data tearing, and redundant server load.
+- **Client-Side Running Balance Derivation:** Rejected. In an event-sourced ledger, running balances require the entire preceding ledger history. Computing balances across paginated slices client-side is mathematically impossible and violates server authority.
+- **Local Component State for `asOf`:** Rejected. Managing `asOf` in React `useState` breaks deep linking, reload consistency, and browser history navigation.
+- **Client-Side Sorting/Filtering on Audit Trail:** Rejected. Arbitrary sorting or event filtering would destroy the chronological continuity of running balances, violating core auditing invariants.
+
+### Rationale
+
+This decision reinforces the fundamental architectural axiom of the system: **the client is a truthful, immutable projection of server-authoritative double-entry state**. By unifying data retrieval under a single query, anchoring temporal parameters in the URL, strictly normalizing timezones to UTC, and treating balances as immutable server projections, the frontend provides complete auditability without risking mathematical drift or visual inconsistency.
+
+### Consequences
+
+Positive
+
+- Zero data tearing between balance card and audit table.
+- Single network request per audit query.
+- Full deep-link and bookmark support for historical balance states.
+- Unbroken chronological timeline preserving double-entry audit integrity.
+- Clear user visibility into UTC normalization and inclusive boundary semantics.
+- Pre-creation states modeled truthfully as $0.00 without error cascades.
+
+Negative
+
+- Deep-link URLs contain encoded UTC timestamps (e.g. `asOf=2026-09-28T18%3A30%3A00.000Z`), which are longer than simple date strings.
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

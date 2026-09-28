@@ -8,6 +8,7 @@ import {
   useAccountTransactions,
   useAccountLedger,
   useAccountEvents,
+  useAuditTrail,
 } from '../auditQueries'
 import { apiClient } from '@/api/client'
 import { EntryType, EventType, TransactionStatus, TransactionType } from '@/types/enums'
@@ -70,6 +71,15 @@ describe('auditQueries', () => {
         '42',
         'events',
         eventParams,
+      ])
+
+      const trailParams = { page: 0, size: 20, asOf: '2026-09-10T12:00:00Z' }
+      expect(auditKeys.trailRoot(accountId)).toEqual(['accounts', '42', 'trail'])
+      expect(auditKeys.trail(accountId, trailParams)).toEqual([
+        'accounts',
+        '42',
+        'trail',
+        trailParams,
       ])
     })
   })
@@ -224,4 +234,84 @@ describe('auditQueries', () => {
       expect(result.current.data).toEqual({ accountId: 10, balance: '250.00', asOf: null })
     })
   })
+
+  describe('useAuditTrail', () => {
+    it('fetches current audit trail without asOf', async () => {
+      const mockResponse = {
+        accountId: 10,
+        finalBalance: '1000.00',
+        asOf: null,
+        items: [
+          {
+            eventId: 1,
+            eventType: EventType.ACCOUNT_CREATED,
+            transactionId: null,
+            referenceNumber: null,
+            balanceChange: '0.00',
+            runningBalance: '0.00',
+            occurredAt: '2026-09-20T10:00:00Z',
+          },
+        ],
+        page: 0,
+        size: 20,
+        totalPages: 1,
+        totalElements: 1,
+      }
+
+      vi.mocked(apiClient).mockResolvedValueOnce(mockResponse)
+
+      const { result } = renderHook(
+        () => useAuditTrail('10', { page: 0, size: 20 }),
+        { wrapper: createWrapper() }
+      )
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(apiClient).toHaveBeenCalledWith('/accounts/10/audit/trail', {
+        params: {
+          page: 0,
+          size: 20,
+          asOf: undefined,
+        },
+      })
+      expect(result.current.data).toEqual(mockResponse)
+    })
+
+    it('fetches historical audit trail with asOf cutoff parameter', async () => {
+      const mockResponse = {
+        accountId: 10,
+        finalBalance: '500.00',
+        asOf: '2026-09-20T11:00:00Z',
+        items: [],
+        page: 0,
+        size: 10,
+        totalPages: 0,
+        totalElements: 0,
+      }
+
+      vi.mocked(apiClient).mockResolvedValueOnce(mockResponse)
+
+      const { result } = renderHook(
+        () =>
+          useAuditTrail('10', {
+            page: 0,
+            size: 10,
+            asOf: '2026-09-20T11:00:00Z',
+          }),
+        { wrapper: createWrapper() }
+      )
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+      expect(apiClient).toHaveBeenCalledWith('/accounts/10/audit/trail', {
+        params: {
+          page: 0,
+          size: 10,
+          asOf: '2026-09-20T11:00:00Z',
+        },
+      })
+      expect(result.current.data).toEqual(mockResponse)
+    })
+  })
 })
+

@@ -30,19 +30,9 @@ import { AccountOverviewPage } from '@/features/accounts/pages/AccountOverviewPa
 import { AccountTransactionsPage } from '@/features/transactions/pages/AccountTransactionsPage'
 import { AccountLedgerPage } from '@/features/audit/pages/AccountLedgerPage'
 import { AccountEventsPage } from '@/features/audit/pages/AccountEventsPage'
+import { AuditTrailPage } from '@/features/audit/pages/AuditTrailPage'
 
-// ---------------------------------------------------------------------------
-// Minimal placeholder — renders a heading and scope note only.
-// No data fetching. No feature logic.
-// ---------------------------------------------------------------------------
-function Placeholder({ title, phase }: { title: string; phase: string }) {
-  return (
-    <div>
-      <h1>{title}</h1>
-      <p className="text-muted">Available in {phase}.</p>
-    </div>
-  )
-}
+
 
 const router = createBrowserRouter([
   {
@@ -100,7 +90,7 @@ const router = createBrowserRouter([
           // Audit Trail — F4
           {
             path: 'audit',
-            element: <Placeholder title="Audit Trail" phase="Phase F4" />,
+            element: <AuditTrailPage />,
           },
         ],
       },

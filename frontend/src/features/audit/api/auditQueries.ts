@@ -13,6 +13,7 @@ import { apiClient } from '@/api/client'
 import { ENDPOINTS } from '@/api/endpoints'
 import type { PagedResponse } from '@/types/common'
 import type {
+  AccountAuditTrailParams,
   AccountEventParams,
   AccountEventResponse,
   AccountLedgerParams,
@@ -20,6 +21,7 @@ import type {
   AccountTransactionParams,
   AccountTransactionResponse,
   AuditBalanceResponse,
+  AuditTrailResponse,
 } from '../types/audit'
 
 export const auditKeys = {
@@ -44,7 +46,14 @@ export const auditKeys = {
     ['accounts', String(accountId), 'events'] as const,
   events: (accountId: number | string, params?: AccountEventParams) =>
     [...auditKeys.eventsRoot(accountId), params] as const,
+
+  // Audit trail keys
+  trailRoot: (accountId: number | string) =>
+    ['accounts', String(accountId), 'trail'] as const,
+  trail: (accountId: number | string, params?: AccountAuditTrailParams) =>
+    [...auditKeys.trailRoot(accountId), params] as const,
 }
+
 
 /**
  * Fetches the authoritative reconstructed current balance for an account.
@@ -152,3 +161,37 @@ export function useAccountEvents(
     enabled: isEnabled,
   })
 }
+
+/**
+ * Fetches the paginated chronological audit trail with running balances for an account.
+ * Endpoint: GET /accounts/{accountId}/audit/trail
+ * FRONTEND_ARCHITECTURE.md §12.1, API_GUIDELINES.md §11, §21
+ *
+ * Consumes the specialized AuditTrailResponse DTO.
+ * Running balances and final balance are server-authoritative; never calculate client-side.
+ */
+export function useAuditTrail(
+  accountId: number | string | undefined,
+  params?: AccountAuditTrailParams,
+  options?: { enabled?: boolean }
+): UseQueryResult<AuditTrailResponse, unknown> {
+  const accountIdStr = accountId !== undefined ? String(accountId) : ''
+  const isEnabled = (options?.enabled ?? true) && Boolean(accountIdStr)
+
+  return useQuery({
+    queryKey: auditKeys.trail(accountIdStr, params),
+    queryFn: () =>
+      apiClient<AuditTrailResponse>(
+        ENDPOINTS.audit.trail(accountIdStr),
+        {
+          params: {
+            page: params?.page,
+            size: params?.size,
+            asOf: params?.asOf || undefined,
+          },
+        }
+      ),
+    enabled: isEnabled,
+  })
+}
+

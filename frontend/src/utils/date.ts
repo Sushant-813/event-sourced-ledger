@@ -108,3 +108,33 @@ export function normalizeAsOf(localDatetimeString: string | null | undefined): s
 export function nowUtcIso(): string {
   return new Date().toISOString()
 }
+
+/**
+ * Converts a UTC ISO-8601 string to local time formatted as `YYYY-MM-DDTHH:mm`
+ * for pre-populating an HTML5 `<input type="datetime-local" />`.
+ *
+ * Returns an empty string '' for null, undefined, empty, or invalid input.
+ *
+ * @param isoString - UTC ISO-8601 string (e.g. from URL `asOf` query param).
+ * @returns Local datetime string in `YYYY-MM-DDTHH:mm` format, or ''.
+ */
+export function toLocalDatetimeInputString(isoString: string | null | undefined): string {
+  if (isoString === null || isoString === undefined || isoString.trim() === '') {
+    return ''
+  }
+
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) {
+    return ''
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+

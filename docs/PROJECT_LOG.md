@@ -1578,4 +1578,92 @@ Phase F3 intentionally does NOT contain:
 - User authentication or RBAC (out of scope for v1.0)
 - Backend code modifications (`git diff -- backend/` is completely empty)
 
-Phase F3 accepted and complete. Phase F4 ready for execution.
+Phase F3 accepted and complete. Phase F4 ready for execution.
+
+---
+
+## 2026-09-29
+
+### Phase F4 — Audit Experience: COMPLETED
+
+Phase F4 delivered the signature audit experience of the event-sourced ledger, implementing the chronological audit trail and point-in-time balance reconstruction view.
+
+#### What Was Implemented & Verified
+
+**Audit Trail DTOs & Query Layer (`frontend/src/features/audit/`)**
+- Added `AuditTrailItemResponse`, `AuditTrailResponse`, and `AccountAuditTrailParams` to `types/audit.ts` preserving strict backend nullability (`transactionId: number | null`, `referenceNumber: string | null`, `asOf: string | null`).
+- Implemented hierarchical query key factories: `auditKeys.trailRoot()` and `auditKeys.trail(accountId, params)`.
+- Implemented `useAuditTrail` React Query hook consuming `GET /accounts/{accountId}/audit/trail` with `page`, `size`, and `asOf` parameters.
+- Preserved single-query architecture: the view issues zero secondary balance requests and relies solely on `AuditTrailResponse`.
+
+**Date / Time Normalization Utilities (`frontend/src/utils/date.ts`)**
+- Implemented `toLocalDatetimeInputString(isoString)` to convert UTC ISO-8601 strings into local browser `YYYY-MM-DDTHH:mm` format for `<input type="datetime-local" />` hydration.
+- Utilized existing `normalizeAsOf(localDatetimeString)` to strictly convert user local datetime inputs to UTC ISO-8601 before API submission.
+
+**Authoritative Balance Card (`frontend/src/features/audit/components/AuditBalanceCard.tsx`)**
+- Consumes `finalBalance` directly from `AuditTrailResponse.finalBalance` via `Money.fromWire()`.
+- Visually distinguishes Current Reconstructed Balance vs Historical Reconstructed Balance As Of [Formatted Local Timestamp] (UTC).
+- Annotated with event count (`Derived from X historical event(s) up to selected cutoff point`) and copy confirming server-authoritative derivation from full event replay prior to pagination.
+- Explicitly renders `0.00` for zero balances (e.g. pre-creation cutoff).
+
+**Audit Trail Controls (`frontend/src/features/audit/components/AuditTrailControls.tsx`)**
+- Scoped strictly to: datetime-local cutoff input, Reconstruct action button, and Reset to Current Balance button (when `asOf` is active).
+- Displays inclusive boundary notice: `Includes all events where occurredAt <= asOf. Events sharing the identical boundary timestamp are included together.`
+- Zero unapproved quick actions ("Set to Current Time" intentionally excluded per PRD/Design specs).
+
+**Audit Trail Table (`frontend/src/features/audit/components/AuditTrailTable.tsx`)**
+- Implemented 7 columns matching the authoritative presentation order in DESIGN.md §12–13:
+  `Occurred At | Event Type | Event ID | Reference # | Transaction ID | Balance Change (₹) | Running Balance (₹)`
+- Applies tabular numeric typography (`font-variant-numeric: tabular-nums`) on all monetary values.
+- Formats signed deltas with explicit `+` or `-` via `Money.format({ showPositiveSign: true })`.
+- Explicitly renders `0.00` for genesis event (`ACCOUNT_CREATED`) delta.
+- Renders `—` for null identifiers (`transactionId`, `referenceNumber`).
+- Preserves accounting neutrality: neither debit nor credit is styled red or green.
+- Preserves absolute immutability: zero edit, delete, rollback, or mutation affordances.
+
+**Audit Trail Page Route Controller (`frontend/src/features/audit/pages/AuditTrailPage.tsx`)**
+- Wired to `/accounts/:accountId/audit` in `AppRoutes.tsx`, replacing the F0 placeholder and removing obsolete `Placeholder` helper.
+- URL search parameters own `page`, `size`, and `asOf` state.
+- Preserves `asOf` and `size` across pagination page transitions.
+- Handles out-of-range pagination (HTTP 200 with empty items) as a valid empty-page state while retaining stable `finalBalance` and a "Return to Page 1" action.
+- Handles pre-creation cutoff as a valid financial state ($0.00 balance) with clear historical empty state and a "Reset to Current Balance" action.
+
+**Financial Correctness & Architectural Invariants Maintained**
+- Zero client-side balance calculations, event replay, or delta summation.
+- `finalBalance`, `runningBalance`, and `balanceChange` are server-authoritative.
+- Backend code remained completely untouched (`git diff -- backend/` is 100% empty).
+- No new dependencies added.
+
+#### Verification Result
+
+```text
+Automated Tests:   175/175 passed across 18 test files (0 failures)
+                   - src/features/audit/api/__tests__/auditQueries.test.tsx (8 tests, +2 new)
+                   - src/features/audit/components/__tests__/AuditTrailTable.test.tsx (6 tests, NEW)
+                   - src/features/audit/components/__tests__/AuditTrailControls.test.tsx (5 tests, NEW)
+                   - src/features/audit/components/__tests__/AuditBalanceCard.test.tsx (4 tests, NEW)
+                   - src/features/audit/pages/__tests__/AuditTrailPage.test.tsx (7 tests, NEW)
+                   - src/utils/__tests__/date.test.ts (23 tests, +5 new)
+                   - 12 existing test suites (118 tests) untouched and passing
+TypeScript:        PASS (tsc --noEmit & tsc -b, 0 errors)
+ESLint:            PASS on all 14 F4 files (0 errors, 0 warnings)
+                   * Note: 4 pre-existing errors and 6 pre-existing warnings in untouched F0/F1 files
+                     remain in repo-wide lint and are scheduled for Phase F5 cross-cutting polish.
+Production Build:  PASS (tsc -b && vite build — optimized static bundle generated cleanly)
+Backend Diff:      Completely clean / untouched (0 modifications)
+```
+
+#### Architectural Boundary
+
+Phase F4 intentionally does NOT contain:
+- Portfolio Dashboard metrics or summary aggregations (Phase F5)
+- Cross-cutting accessibility polish or global quality gate cleanups (Phase F5)
+- User authentication or RBAC (out of scope for v1.0)
+- Backend code modifications (`git diff -- backend/` is completely empty)
+
+#### New ADRs Recorded
+
+- ADR-033: Frontend Audit Experience Architecture: Single-Query Audit Projection, URL-Owned Temporal Reconstruction, Strict Boundary Normalization, and Server-Authoritative Running Balances
+
+Phase F4 accepted and complete. Phase F5 (Dashboard & Release Readiness) ready for execution.
+

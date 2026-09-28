@@ -89,3 +89,47 @@ export interface AccountEventParams {
   sortBy?: 'occurredAt'
   direction?: SortDirection
 }
+
+/**
+ * Audit trail item returned by GET /accounts/{accountId}/audit/trail.
+ * API_GUIDELINES.md §21, FRONTEND_PRD.md §13.1.
+ *
+ * Wire format note:
+ * `balanceChange` and `runningBalance` may be emitted as JSON string or unquoted number.
+ * Ingest via Money.fromWire(...). Never calculate client-side.
+ */
+export interface AuditTrailItemResponse {
+  eventId: number
+  eventType: EventType
+  transactionId: number | null
+  referenceNumber: string | null
+  balanceChange: string | number
+  runningBalance: string | number
+  occurredAt: string
+}
+
+/**
+ * Specialized financial audit trail response returned by GET /accounts/{accountId}/audit/trail.
+ * API_GUIDELINES.md §11, §21, FRONTEND_PRD.md §13.1, FRONTEND_ARCHITECTURE.md §5.3.
+ */
+export interface AuditTrailResponse {
+  accountId: number
+  finalBalance: string | number
+  asOf: string | null
+  items: AuditTrailItemResponse[]
+  page: number
+  size: number
+  totalPages: number
+  totalElements: number
+}
+
+/**
+ * Query parameters for GET /accounts/{accountId}/audit/trail.
+ * Sorting and filtering are disallowed by backend to preserve chronological accounting integrity.
+ */
+export interface AccountAuditTrailParams {
+  page?: number
+  size?: number
+  asOf?: string | null | undefined
+}
+
