@@ -70,3 +70,5 @@ export interface TransferResponse {
   amount: string | number
   createdAt: string
 }
+
+export type { AccountTransactionResponse, AccountTransactionParams } from '@/features/audit/types/audit'

@@ -8,7 +8,8 @@
 - **Frontend Phase F0 — Frontend Foundation:** COMPLETED (2026-09-23)  
 - **Frontend Phase F1 — Account Experience:** COMPLETED (2026-09-23)  
 - **Frontend Phase F2 — Monetary Operations:** COMPLETED (2026-09-27)  
-- **Frontend Implementation (Phases F3–F5):** NEXT / READY FOR EXECUTION (Phase F3 Next)  
+- **Frontend Phase F3 — Financial History:** COMPLETED (2026-09-28)  
+- **Frontend Implementation (Phases F4–F5):** NEXT / READY FOR EXECUTION (Phase F4 Next)  
 - **Future Enhancements:** DEFERRED / POST-v1.0  
 
 ---
@@ -45,7 +46,7 @@ The project adheres to these core architectural and execution principles:
 ### 3.1 What is Covered
 - **Backend Core**: Event store, double-entry ledger, balance reconstruction, audit trail, pagination/sorting/filtering, pessimistic row locking, and REST APIs (**COMPLETED v1.0.0**).
 - **Frontend Planning**: Frozen PRD, TRD, Design System tokens, and Frontend Architecture (**COMPLETED**).
-- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Feature Phases F3–F5 UPCOMING (Phase F3 Financial History Next).
+- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Phase F3 (Financial History) COMPLETED (2026-09-28); Feature Phases F4–F5 UPCOMING (Phase F4 Audit Experience Next).
 
 ### 3.2 What is Intentionally Deferred (Post-v1.0)
 - User authentication and Role-Based Access Control (RBAC).
@@ -475,7 +476,7 @@ Implement monetary transaction workflows for deposits, withdrawals, and account-
 
 ## Phase F3 — Financial History
 
-**Status: NEXT / READY FOR EXECUTION**
+**Status: COMPLETED — 2026-09-28**
 
 ### Objective
 Implement immutable financial history inspection views scoped to the active account.
@@ -544,8 +545,8 @@ Dashboard accurately displays portfolio counts, UI is fully responsive and keybo
 | **MF0** | Project Shell, Routing, Styling Tokens & API Foundation | COMPLETED (2026-09-23) | Phase F0 |
 | **MF1** | Account Directory, Overview, Creation & Lifecycle | COMPLETED (2026-09-23) | Phase F1 |
 | **MF2** | Deposit, Withdrawal & Transfer Workflows | COMPLETED (2026-09-27) | Phase F2 |
-| **MF3** | Transactions, Ledger Entries & Event Stream History | UPCOMING (Next) | Phase F3 |
-| **MF4** | Audit Trail & Historical Balance Reconstruction (`asOf`) | UPCOMING | Phase F4 |
+| **MF3** | Transactions, Ledger Entries & Event Stream History | COMPLETED (2026-09-28) | Phase F3 |
+| **MF4** | Audit Trail & Historical Balance Reconstruction (`asOf`) | UPCOMING (Next) | Phase F4 |
 | **MF5** | Dashboard, Responsive / A11y Polish & End-to-End Validation | UPCOMING | Phase F5 |
 
 ---

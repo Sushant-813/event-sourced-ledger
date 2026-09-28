@@ -2055,6 +2055,102 @@ Negative
 
 ---
 
+# ADR-032
+
+## Title
+
+Frontend Financial History Architecture: Server-Authoritative Historical Projection, Absence of Synthesized Amounts, Strict Double-Entry Presentation, and Centralized Multi-Entity Invalidation
+
+### Status
+
+Accepted
+
+### Context
+
+Frontend Phase F3 introduces immutable financial history inspection views scoped to an active account:
+1. Account Transactions History (`GET /accounts/{accountId}/audit/transactions`)
+2. Account Ledger Entries Journal (`GET /accounts/{accountId}/audit/ledger`)
+3. Account Domain Event Stream (`GET /accounts/{accountId}/audit/events`)
+
+In an event-sourced ledger governed by strict double-entry invariants and server authority, financial history presentation introduces distinct architectural hazards:
+
+1. **Transaction DTO Asymmetry vs. Client Amount Synthesis:**
+   The backend `AccountTransactionResponse` DTO contains transaction metadata (`transactionId`, `referenceNumber`, `transactionType`, `status`, `createdAt`), but intentionally does NOT contain an amount field. There is a strong temptation for frontend developers to either:
+   - Fabricate an amount column by attempting to fetch or match ledger entries or events client-side.
+   - Synthesize an amount from modal contexts.
+   Attempting to join or compute amounts on the client invites race conditions, violates server authority, and distorts the domain boundary: in double-entry bookkeeping, a transaction is an orchestration envelope that may comprise multiple balanced debits and credits across multiple accounts; it does not possess a single scalar balance effect on an account outside of its ledger entries.
+
+2. **Accounting Neutrality in Double-Entry Presentation:**
+   In double-entry banking, DEBIT and CREDIT are directional accounting entries, not value judgments of "loss" or "gain". Debits increase asset accounts (such as cash or customer receivables) and decrease liability/equity accounts. Coloring debits red and credits green is fundamentally misleading in an accounting system and violates `DESIGN.md §2.4, §12.3, §29`.
+
+3. **Event Stream Completeness & Immutability:**
+   Domain events recorded by the event store represent permanent, unalterable historical facts. The backend `GET /accounts/{accountId}/audit/events` endpoint explicitly rejects filtering by `eventType` to prevent selective omission of the audit timeline. Exposing a client-side filter or omitting events would violate audit integrity. Furthermore, event inspection must remain strictly read-only and must never derive or imply a running balance from event payloads.
+
+4. **Multi-Entity Cache Invalidation Across Transactions:**
+   Monetary operations (deposits, withdrawals, transfers implemented in Phase F2) affect not only current account balances, but also the underlying transaction lists, double-entry ledger entries, and immutable event streams. In transfers, two distinct accounts are altered concurrently. If query invalidation is performed ad-hoc or duplicated with inline array literals, pagination/filter variants become stale, and destination accounts in transfers risk displaying out-of-sync financial history.
+
+### Decision
+
+1. **Zero Amount Synthesis on Transaction History:**
+   - The Transactions table renders strictly: `Date`, `Reference #`, `Type`, `Status`, and `Actions` (`[View Details]`).
+   - The frontend NEVER derives, fabricates, or displays an amount column on `AccountTransactionsPage` or `TransactionsTable`.
+   - Monetary effects are inspected exclusively through the **Ledger** view (where debit/credit legs are explicit) or the **Audit Trail** view.
+   - In `TransactionDetailModal`, `accountId` is labeled strictly as `Account ID (Context)` to avoid misrepresenting it as an `AccountTransactionResponse` property, and no amount is displayed.
+
+2. **Strict Accounting Neutrality for Ledger Presentation:**
+   - In `LedgerTable`, debits and credits are separated into distinct columns: `Debit (₹)` and `Credit (₹)`.
+   - Both columns are styled using neutral typography (`var(--color-ink)`) with monospace tabular numbers (`font-variant-numeric: tabular-nums`).
+   - Neither column is ever colored red or green.
+   - Ledger queries support filtering strictly by `entryType` (`CREDIT` or `DEBIT`) and sorting strictly by `createdAt` (`asc` / `desc`), matching backend validation.
+
+3. **Immutable Event Stream & Slide-Over Inspection:**
+   - The Events view provides sorting on `occurredAt` (`asc` / `desc`) but intentionally provides NO `eventType` filter, preserving complete historical integrity.
+   - Event inspection is implemented via an accessible `SlideOver` drawer primitive that renders safely formatted JSON payloads with copy-to-clipboard functionality and an explicit immutability banner.
+   - The drawer displays zero derived balance values.
+
+4. **Centralized Hierarchical Query-Key Factories (`auditKeys`):**
+   - All audit-related query keys are centralized in `auditKeys` within `src/features/audit/api/auditQueries.ts`:
+     - `auditKeys.transactionsRoot(accountId)` -> `['accounts', accountId, 'transactions']`
+     - `auditKeys.ledgerRoot(accountId)` -> `['accounts', accountId, 'ledger']`
+     - `auditKeys.eventsRoot(accountId)` -> `['accounts', accountId, 'events']`
+     - `auditKeys.balance(accountId, asOf)` -> `['accounts', accountId, 'balance', { asOf }]`
+     - `auditKeys.all(accountId)` -> `['accounts', accountId]`
+   - Monetary mutations in `transactionMutations.ts` utilize these factories rather than inline string arrays.
+   - Invalidation uses root prefix keys (`auditKeys.transactionsRoot()`, `auditKeys.ledgerRoot()`, `auditKeys.eventsRoot()`) so that all pagination, sorting, and filter permutations are purged simultaneously.
+   - For transfers, invalidation is executed for **both source and destination accounts**:
+     - `auditKeys.all(sourceAccountId)`
+     - `auditKeys.all(destinationAccountId)`
+
+5. **Accessible Overlay Architecture:**
+   - Created `SlideOver` primitive in `src/components/overlay/SlideOver.tsx` using React Portals with focus trapping, Escape key dismissal, scroll-locking, and WCAG AA dialog semantics (`role="dialog"`, `aria-modal="true"`).
+
+### Alternatives Considered
+
+- **Client-Side Join for Transaction Amounts:** Rejected. Merging ledger entries or audit trail rows into transaction items client-side would require unbounded background fetches, create synchronization discrepancies across pagination slices, and contradict the backend contract.
+- **Client-Side Event Type Filtering:** Rejected. The backend API deliberately omits `eventType` filtering to preserve event log integrity (`API_GUIDELINES.md §13`). Introducing client-side filtering over paginated slices would yield incomplete or misleading pages.
+- **Coloring Debits and Credits:** Rejected. Coloring debits red and credits green violates standard double-entry accounting principles and `DESIGN.md §29`.
+- **Decentralized Query Keys in Mutation Files:** Rejected. Hardcoding query key arrays in `transactionMutations.ts` caused divergence and missed invalidation of nested history parameters. Centralizing in `auditKeys` ensures single-point-of-truth cache keys.
+
+### Rationale
+
+This decision reinforces the core architectural axiom of the system: **the client is a truthful projection of server-authoritative double-entry state**. By refusing to synthesize amounts, preserving accounting-neutral visual semantics, respecting backend filter boundaries, and establishing centralized multi-entity cache invalidation, the frontend guarantees that financial history is presented accurately, predictably, and with zero arithmetic drift.
+
+### Consequences
+
+Positive
+
+- Clean separation between transaction orchestration metadata and double-entry monetary impact.
+- Accounting-neutral presentation prevents false mental models of debits/credits.
+- Unbroken audit timeline guarantees users observe complete event sequences.
+- Dual-account cache invalidation on transfers ensures counterparty history and balances update immediately.
+- Accessible, reusable `SlideOver` primitive established for complex inspection views.
+
+Negative
+
+- Users looking for a single "transaction amount" must navigate to the Ledger or Audit Trail view to inspect monetary legs.
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

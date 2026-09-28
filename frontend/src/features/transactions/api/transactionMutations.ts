@@ -53,9 +53,18 @@ export function useDeposit() {
       })
     },
     onSuccess: (_data, variables) => {
-      // Invalidate strictly the authoritative balance query for this account
+      // Invalidate authoritative balance and history queries for this account
       void queryClient.invalidateQueries({
         queryKey: auditKeys.balance(variables.accountId, null),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.transactionsRoot(variables.accountId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.ledgerRoot(variables.accountId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.eventsRoot(variables.accountId),
       })
     },
   })
@@ -77,9 +86,18 @@ export function useWithdrawal() {
       })
     },
     onSuccess: (_data, variables) => {
-      // Invalidate strictly the authoritative balance query for this account
+      // Invalidate authoritative balance and history queries for this account
       void queryClient.invalidateQueries({
         queryKey: auditKeys.balance(variables.accountId, null),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.transactionsRoot(variables.accountId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.ledgerRoot(variables.accountId),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: auditKeys.eventsRoot(variables.accountId),
       })
     },
   })
@@ -99,13 +117,22 @@ export function useTransfer() {
         body: JSON.stringify(request),
       }),
     onSuccess: (_data, variables) => {
-      // Invalidate authoritative balance queries for BOTH source and destination accounts
-      void queryClient.invalidateQueries({
-        queryKey: auditKeys.balance(variables.sourceAccountId, null),
-      })
-      void queryClient.invalidateQueries({
-        queryKey: auditKeys.balance(variables.destinationAccountId, null),
-      })
+      // Invalidate authoritative balance and history queries for BOTH source and destination accounts
+      const accountsToInvalidate = [variables.sourceAccountId, variables.destinationAccountId]
+      for (const id of accountsToInvalidate) {
+        void queryClient.invalidateQueries({
+          queryKey: auditKeys.balance(id, null),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: auditKeys.transactionsRoot(id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: auditKeys.ledgerRoot(id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: auditKeys.eventsRoot(id),
+        })
+      }
     },
   })
 }

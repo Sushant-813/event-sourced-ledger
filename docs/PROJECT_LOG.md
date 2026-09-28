@@ -1481,4 +1481,101 @@ Phase F2 intentionally does NOT contain:
 - Authentication or user management (out of scope for v1.0)
 - Backend code modifications (`git diff -- backend/` is completely empty)
 
-Phase F2 accepted and complete. Phase F3 ready for execution.
+Phase F2 accepted and complete. Phase F3 ready for execution.
+
+---
+
+## 2026-09-28
+
+### Phase F3 — Financial History: COMPLETED
+
+Phase F3 has been implemented, thoroughly tested, and verified against the frozen backend v1.0.0 REST API.
+All financial history inspection tabs (Transactions, Ledger, Events) are operational with server-driven pagination, sorting, drawer inspection, zero fabricated amounts, and double-entry presentation standards.
+
+#### What Was Implemented
+
+**DTO Types & Query Interfaces (`frontend/src/features/audit/types/audit.ts`)**
+- Added exact types matching frozen backend v1.0.0:
+  - `AccountTransactionResponse` (`transactionId`, `transactionType`, `description`, `referenceNumber`, `createdAt`) — explicitly zero amount field.
+  - `AccountLedgerEntryResponse` (`entryId`, `accountNumber`, `entryType`, `amount`, `referenceNumber`, `createdAt`).
+  - `AccountEventResponse` (`eventId`, `eventType`, `occurredAt`, `transactionId`, `payload`).
+  - Parameter interfaces with server-driven pagination (`page`, `size`) and validated sort fields: `AccountTransactionParams`, `AccountLedgerParams` (with `entryType`), `AccountEventParams`.
+- Re-exported relevant types via `frontend/src/features/transactions/types/transaction.ts`.
+
+**Accessible Overlay Primitives (`frontend/src/components/overlay/SlideOver.tsx`)**
+- Created accessible slide-over drawer primitive using React Portals (`#modal-root` fallback to `document.body`).
+- Features focus trapping, Escape key dismissal, body scroll-locking, accessible ARIA attributes (`role="dialog"`, `aria-modal="true"`, `aria-labelledby`), and smooth CSS slide-in transitions.
+
+**Query Hooks & Targeted Cache Invalidation (`frontend/src/features/audit/api/auditQueries.ts`)**
+- Implemented hierarchical query key factories: `auditKeys.transactionsRoot()`, `auditKeys.ledgerRoot()`, `auditKeys.eventsRoot()`, and `auditKeys.all(accountId)`.
+- Implemented React Query hooks: `useAccountTransactions`, `useAccountLedger`, and `useAccountEvents`.
+- Updated monetary mutations in `transactionMutations.ts` using centralized `auditKeys` factories:
+  - Post-mutation invalidations automatically purge transactions, ledger entries, events, and balance queries.
+  - Transfer mutations invalidate financial history and balance queries for **both source and destination accounts**.
+
+**Account Transactions History Tab (`frontend/src/features/transactions/`)**
+- Implemented `TransactionsTable` rendering `Date`, `Type`, `Description`, `Reference #`, and `Actions`.
+- Strictly zero amount column or derived financial figures.
+- Implemented `TransactionDetailModal` providing modal view of transaction properties without fabricating an amount or misrepresenting `accountId` as a response field.
+- Implemented `AccountTransactionsPage` with full server-driven pagination and accessible empty states.
+
+**Account Ledger History Tab (`frontend/src/features/audit/`)**
+- Implemented `LedgerControls` supporting `entryType` filtering (`ALL`, `DEBIT`, `CREDIT`) and sort order toggling on `createdAt`.
+- Implemented `LedgerTable` separating debits and credits into distinct columns.
+- Enforced neutral typography (`var(--color-ink)`) with `font-variant-numeric: tabular-nums`: Debit is NEVER styled red, Credit is NEVER styled green.
+- Implemented `AccountLedgerPage` with URL query param synchronization and empty states.
+
+**Account Events Stream Tab & Inspection Drawer (`frontend/src/features/audit/`)**
+- Implemented `EventsControls` supporting chronological sort ordering on `occurredAt` (strictly NO `eventType` filter per frozen backend API).
+- Implemented `EventsTable` displaying `Occurred At`, `Event Type`, `Event ID`, `Transaction ID`, and `Inspect` action.
+- Implemented `EventPayloadDrawer` displaying safely formatted, syntax-styled JSON payloads, payload copy button, immutability audit banner, and metadata summary with zero balance derivation.
+- Implemented `AccountEventsPage` with server-driven pagination.
+
+**Routing Integration (`frontend/src/routes/AppRoutes.tsx`)**
+- Replaced F0/F1 placeholder routes with real historical views:
+  - `/accounts/:accountId/transactions` -> `AccountTransactionsPage`
+  - `/accounts/:accountId/ledger` -> `AccountLedgerPage`
+  - `/accounts/:accountId/events` -> `AccountEventsPage`
+  - `/accounts/:accountId/audit` preserved as placeholder for Phase F4.
+
+**Financial Correctness & Architectural Invariants Maintained**
+- Zero client-side balance calculations or running balance derivations.
+- Zero JavaScript `Number` or `parseFloat` used for monetary amounts (rendered safely via `Money.fromWire()`).
+- Zero fabricated transaction amounts.
+- Debit and Credit formatted using neutral styling.
+- Backend code remained completely untouched (`git diff -- backend/` is 100% empty).
+
+#### Verification Result
+
+```text
+Automated Tests:   146/146 passed across 14 test files (0 failures)
+                   - src/utils/__tests__/date.test.ts (18 tests)
+                   - src/utils/__tests__/validation.test.ts (23 tests)
+                   - src/utils/__tests__/money.test.ts (34 tests)
+                   - src/api/__tests__/client.test.ts (12 tests)
+                   - src/features/transactions/api/__tests__/transactionMutations.test.tsx (6 tests)
+                   - src/features/audit/api/__tests__/auditQueries.test.tsx (6 tests)
+                   - src/features/accounts/pages/__tests__/AccountOverviewPage.test.tsx (6 tests)
+                   - src/features/transactions/pages/__tests__/AccountTransactionsPage.test.tsx (4 tests)
+                   - src/features/transactions/components/__tests__/TransactionDetailModal / Table (included in page suite)
+                   - src/features/audit/pages/__tests__/AccountLedgerPage.test.tsx (5 tests)
+                   - src/features/audit/pages/__tests__/AccountEventsPage.test.tsx (5 tests)
+                   - src/features/audit/components/__tests__/EventPayloadDrawer.test.tsx (3 tests)
+                   - src/features/transactions/components/__tests__/WithdrawalModal.test.tsx (9 tests)
+                   - src/features/transactions/components/__tests__/DepositModal.test.tsx (9 tests)
+                   - src/features/transactions/components/__tests__/TransferModal.test.tsx (6 tests)
+TypeScript:        PASS (tsc -b, 0 errors)
+ESLint:            PASS on all F3 files (0 errors, 0 warnings)
+Production Build:  PASS (tsc -b && vite build — optimized static bundle in 2.46s)
+Backend Diff:      Completely clean / untouched (0 modifications)
+```
+
+#### Architectural Boundary
+
+Phase F3 intentionally does NOT contain:
+- Audit trail view or historical balance reconstruction (`asOf`) (Phase F4)
+- Dashboard aggregation metrics or portfolio quick actions (Phase F5)
+- User authentication or RBAC (out of scope for v1.0)
+- Backend code modifications (`git diff -- backend/` is completely empty)
+
+Phase F3 accepted and complete. Phase F4 ready for execution.

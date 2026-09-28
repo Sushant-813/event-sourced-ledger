@@ -27,6 +27,9 @@ import { NotFoundPage } from './NotFoundPage'
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
 import { AccountsPage } from '@/features/accounts/pages/AccountsPage'
 import { AccountOverviewPage } from '@/features/accounts/pages/AccountOverviewPage'
+import { AccountTransactionsPage } from '@/features/transactions/pages/AccountTransactionsPage'
+import { AccountLedgerPage } from '@/features/audit/pages/AccountLedgerPage'
+import { AccountEventsPage } from '@/features/audit/pages/AccountEventsPage'
 
 // ---------------------------------------------------------------------------
 // Minimal placeholder — renders a heading and scope note only.
@@ -82,17 +85,17 @@ const router = createBrowserRouter([
           // Transactions — F3
           {
             path: 'transactions',
-            element: <Placeholder title="Transactions" phase="Phase F3" />,
+            element: <AccountTransactionsPage />,
           },
           // Ledger — F3
           {
             path: 'ledger',
-            element: <Placeholder title="Ledger" phase="Phase F3" />,
+            element: <AccountLedgerPage />,
           },
           // Events — F3
           {
             path: 'events',
-            element: <Placeholder title="Events" phase="Phase F3" />,
+            element: <AccountEventsPage />,
           },
           // Audit Trail — F4
           {

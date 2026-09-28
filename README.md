@@ -16,7 +16,8 @@ calculations or balance reconstruction.
 > - **Frontend Phase F0 (Frontend Foundation):** Complete and verified.
 > - **Frontend Phase F1 (Account Experience):** Complete and verified.
 > - **Frontend Phase F2 (Monetary Operations):** Complete and verified.
-> - **Frontend Phase F3 (Financial History):** Next phase.
+> - **Frontend Phase F3 (Financial History):** Complete and verified.
+> - **Frontend Phase F4 (Audit Experience):** Next phase.
 >
 > See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Current Status](#current-status).
 
@@ -40,15 +41,15 @@ calculations or balance reconstruction.
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-### Frontend (Phase F2 Complete — Phased Implementation In Progress)
+### Frontend (Phase F3 Complete — Phased Implementation In Progress)
 
 | Phase | Description | Status | Target |
 |-------|-------------|--------|--------|
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
-| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** (Next) | History & Journal Tables |
-| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** (Next) | Reconstructed Timeline & Trail |
 | Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
 
 ### Phase 1 — Account Module (completed)
@@ -379,13 +380,16 @@ F1 through F5. The backend remains the sole authority for financial calculations
 - **Withdrawal Workflow (F2)**: Accessible `WithdrawalModal` invoking `POST /accounts/{id}/withdrawal` with standard primary action styling (no destructive red) and backend 422 insufficient funds error handling.
 - **Transfer Workflow (F2)**: Accessible `TransferModal` invoking `POST /transfers` with destination selection strictly filtering out `SYS-CASH` and the source account, dual balance cache invalidation, and backend business error handling.
 - **Monetary Validation (F2)**: `validateMonetaryAmount()` utility enforcing backend `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` constraints without floating-point math.
-- **Server Authority & Cache Invalidation (F1/F2)**: Zero client-side balance calculations or optimistic balance mutations; monetary operations invalidate strictly affected authoritative balance queries (`auditKeys.balance`).
+- **Server Authority & Cache Invalidation (F1/F2/F3)**: Zero client-side balance calculations or optimistic balance mutations; monetary operations invalidate affected authoritative balance queries (`auditKeys.balance`) and financial history.
+- **Account Transactions History (F3)**: Server-paginated view at `/accounts/:accountId/transactions` consuming `GET /accounts/{accountId}/audit/transactions` with event-derived ordering, zero fabricated amount column, and context-aware modal details.
+- **Account Ledger History (F3)**: Double-entry ledger journal at `/accounts/:accountId/ledger` consuming `GET /accounts/{accountId}/audit/ledger` with `entryType` filtering (`CREDIT`, `DEBIT`), `createdAt` sorting, and accounting-neutral typography (no red/green).
+- **Account Domain Events Stream (F3)**: Immutable domain events view at `/accounts/:accountId/events` consuming `GET /accounts/{accountId}/audit/events` with chronological sorting, zero `eventType` filtering (preserving audit timeline completeness), and accessible slide-over JSON payload inspection drawer (`SlideOver`).
+- **Centralized Multi-Entity Invalidation (F3)**: Centralized hierarchical `auditKeys` factories in `auditQueries.ts` ensuring that post-mutation cache purges invalidate transactions, ledger, and event history alongside balances (for both accounts on transfers).
 
-### What Is NOT Implemented Yet (Future Phases F3–F5)
+### What Is NOT Implemented Yet (Future Phases F4–F5)
 
 The following features belong to upcoming phases and are **not yet implemented**:
 
-- Transaction lists, ledger entry tables, and event stream history (Phase F3)
 - Point-in-time balance reconstruction UI and event-by-event audit trail views (`asOf`) (Phase F4)
 - Live dashboard portfolio metrics and aggregate financial statistics (Phase F5)
 
@@ -393,13 +397,13 @@ Placeholder routes and tabs contain no business logic or data fetching.
 
 ### Verification Summary
 
-Frontend Phases F0, F1, and F2 pass all quality gates:
+Frontend Phases F0, F1, F2, and F3 pass all quality gates:
 
-- **Automated Tests:** `npm run test` — **123/123 passed** across 9 test files (0 failures)
+- **Automated Tests:** `npm run test` — **146/146 passed** across 14 test files (0 failures)
 - **TypeScript Typecheck:** `npm run typecheck` (`tsc --noEmit`) and `tsc -b` — **PASS** (0 errors)
-- **Linting:** `npx eslint` across F2 files — **PASS** (0 errors, 0 warnings)
+- **Linting:** `npx eslint` across F3 files — **PASS** (0 errors, 0 warnings)
 - **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (optimized static bundle)
-- **Manual Verification:** Completed and verified in running browser (app boot, accounts directory, creation, lifecycle transitions, authoritative balance updates, deposit, withdrawal, transfer, validation rejection, 422 error display, and status gating).
+- **Manual Verification:** Completed and verified in running browser (app boot, accounts directory, creation, lifecycle transitions, authoritative balance updates, deposit, withdrawal, transfer, validation rejection, 422 error display, status gating, transactions table, ledger table, events stream, and payload inspection drawer).
 
 ### Monetary Wire-Format Finding (ADR-030)
 
@@ -803,8 +807,8 @@ event-sourced-ledger/
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
-| Phase F3 | Transactions, Ledger Entries & Event Stream History | **UPCOMING** (Next) | History & Journal Tables |
-| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** | Reconstructed Timeline & Trail |
+| Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
+| Phase F4 | Audit Trail & Balance Reconstruction Views | **UPCOMING** (Next) | Reconstructed Timeline & Trail |
 | Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** | Final Polish & Production Readiness |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and deliverables.
