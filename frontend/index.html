@@ -19,6 +19,16 @@
       name="description"
       content="Double-entry bank ledger management console — account overview, transaction history, audit trail."
     />
+    <!-- Theme anti-flash initializer -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('esl_theme');
+          var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

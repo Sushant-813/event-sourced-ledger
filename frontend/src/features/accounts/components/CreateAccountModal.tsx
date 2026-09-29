@@ -16,7 +16,7 @@ import { LoadingSpinner } from '@/components/feedback/LoadingSpinner'
 import { ErrorDisplay } from '@/components/feedback/ErrorDisplay'
 import { useCreateAccount } from '../api/accountMutations'
 import { useToast } from '@/hooks/useToast'
-import { ApiError, isApiError, isConflict } from '@/api/errors'
+import { isApiError, isConflict, type ApiError } from '@/api/errors'
 import { AccountType } from '@/types/enums'
 
 export interface CreateAccountModalProps {
@@ -314,7 +314,7 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({ isOpen, 
         }
 
         .create-account-form__cancel-btn:hover:not(:disabled) {
-          background: #e2e5e9;
+          background: var(--surface-strong-hover);
         }
 
         .create-account-form__submit-btn {

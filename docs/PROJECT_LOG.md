@@ -1666,4 +1666,160 @@ Phase F4 intentionally does NOT contain:
 - ADR-033: Frontend Audit Experience Architecture: Single-Query Audit Projection, URL-Owned Temporal Reconstruction, Strict Boundary Normalization, and Server-Authoritative Running Balances
 
 Phase F4 accepted and complete. Phase F5 (Dashboard & Release Readiness) ready for execution.
+
+---
+
+## 2026-09-30
+
+### Phase F5 — Dashboard & Release Readiness: COMPLETED
+
+Phase F5 completed the planned frontend implementation (Phases F0–F5), delivering the portfolio Dashboard, global accessibility hardening, responsive validation across all four breakpoints, automated Playwright browser E2E testing for the critical financial journey, and production release readiness.
+
+#### What Was Implemented & Verified
+
+**Portfolio Dashboard (`/dashboard`)**
+- Implemented `DashboardPage` at `src/features/dashboard/pages/DashboardPage.tsx` displaying **exactly three portfolio metrics**:
+  - Total Accounts
+  - Active Accounts
+  - Frozen Accounts
+- Backed by `useDashboardQueries` issuing 3 concurrent, lightweight queries to `GET /accounts` with `size=1` and reading `totalElements`:
+  - Total Accounts: unfiltered query (`status=null`)
+  - Active Accounts: `status=ACTIVE`
+  - Frozen Accounts: `status=FROZEN`
+- Strictly zero client-side financial calculations; the frontend derives no synthetic totals and computes no balances.
+- Implemented four Quick Actions in `DashboardQuickActions.tsx`:
+  - **Create Account**: triggers `CreateAccountModal`
+  - **Deposit**: triggers `DepositModal` with active customer account selection
+  - **Withdrawal**: triggers `WithdrawalModal` with active customer account selection
+  - **Transfer**: triggers `TransferModal` with active customer source and destination selection
+- All existing monetary operation invariants, business-rule validation, and server-authoritative balance cache invalidations were preserved intact.
+- Transfer modal constraints maintained: active accounts only, `SYS-CASH` excluded, source and destination accounts must differ, zero optimistic updates.
+
+**Accessibility (WCAG 2.1 AA) & Responsive Polish**
+- Enforced complete keyboard navigation: focus traps in modals and drawers, Escape key dismissals, visible 2px primary focus indicators (`:focus-visible`), and proper heading hierarchies.
+- Polite `aria-live` region announcements in `ToastViewport` for transaction feedback.
+- Color-independent state badges pairing explicit text labels with unique geometry (`StatusBadge`).
+- Layout responsiveness verified across all four documented viewports (<640px mobile, 640–1024px tablet, 1024–1280px desktop, and >1280px wide displays with 1200px container cap).
+- Dense financial tables feature horizontal scroll containers with sticky headers.
+
+**Automated Testing & Release Readiness**
+- Added `@playwright/test` dev dependency and established Playwright configuration (`playwright.config.ts`).
+- Created automated browser E2E test `frontend/e2e/critical-journey.spec.ts` executing the complete financial journey against the live backend:
+  1. Creates two customer accounts (Account A and Account B).
+  2. Submits a ₹10,000.00 deposit into Account A and verifies authoritative balance.
+  3. Executes a ₹2,500.00 transfer from Account A to Account B.
+  4. Verifies derived balances on both accounts (Account A: ₹7,500.00; Account B: ₹2,500.00).
+  5. Inspects Account A Audit Trail verifying chronological event stream (`ACCOUNT_CREATED`, `DEPOSIT`, `TRANSFER_DEBIT`) and exact cumulative running balances.
+- Expanded Vitest test coverage to 205 tests across 23 test files.
+- Verified zero TypeScript compiler errors (`npm run typecheck`).
+- Fixed all pre-existing ESLint warnings and errors across the repository (`npm run lint` — 0 errors, 0 warnings).
+- Production build validation (`npm run build`) generates clean static distribution bundle.
+
+#### Verification Result (at F5 completion)
+
+```text
+Automated Tests:   205/205 passed across 23 test files (0 failures)
+TypeScript:        PASS (tsc -b, 0 errors)
+ESLint:            PASS repo-wide (0 errors, 0 warnings)
+Playwright E2E:    PASS (critical-journey.spec.ts passed in real Chromium browser)
+Production Build:  PASS (tsc -b && vite build — optimized static bundle)
+Backend Diff:      Completely clean / untouched (0 modifications)
+```
+
+#### Architectural Boundary
+
+Phase F5 intentionally does NOT contain:
+- Unverified global financial metrics (e.g. system-wide money held or transaction volumes not provided by backend).
+- User authentication, login screens, or RBAC (deferred post-v1.0).
+- Backend code modifications (`git diff -- backend/` is completely empty).
+
+---
+
+## 2026-09-30
+
+### Post-F5 Enhancement — Collapsible Desktop Sidebar: COMPLETED
+
+Following the completion of Phase F5, an enhancement was implemented to maximize workspace width for data-dense financial tables on desktop viewports.
+
+#### What Was Implemented
+
+- Added collapsible state to `Sidebar.tsx`:
+  - **Expanded state**: 240px width with icon and navigation labels.
+  - **Collapsed state**: 64px width displaying centered icons with accessible tooltips on hover and focus.
+- Accessible collapse toggle button with `aria-expanded` and `aria-label` attributes.
+- Smooth CSS width and opacity transitions (0.2s ease).
+- State persistence: user's collapsed/expanded choice is persisted to `localStorage` under the key `esl_sidebar_collapsed` and restored on page load.
+- Desktop collapse behavior is strictly decoupled from mobile off-canvas drawer behavior (<1024px).
+- Respects `prefers-reduced-motion` media queries.
+- Zero impact on backend, API contracts, or financial logic.
+
+---
+
+## 2026-09-30
+
+### Post-F5 Enhancement — Application-Wide Dark Mode Integration: COMPLETED
+
+An application-wide theme architecture was implemented to provide user-controlled light and dark modes with complete visual consistency and zero flash of unstyled content.
+
+#### What Was Implemented
+
+- Created `ThemeContext` and `ThemeProvider` in `src/features/theme/` managing `'light' | 'dark'` theme state.
+- Custom hook `useTheme()` for accessing and updating active theme.
+- `ThemeToggle` component with accessible button semantics, SVG sun/moon icons, and keyboard operability.
+- Added dark mode tokens in `src/styles/tokens.css` under `[data-theme="dark"]`, establishing accessible dark surfaces (`--surface-canvas`, `--surface-card`), inverted text inks (`--color-ink`, `--color-body`), and softened dark borders (`--border-hairline`).
+- Added inline anti-flash script in `index.html` head to read `localStorage` (`esl_theme`) and immediately set `data-theme` on `<html>` before stylesheet evaluation.
+- Migrated hardcoded colors in AppShell, TopBar, Sidebar, modals, tables, and cards to semantic design tokens.
+- WCAG AA contrast maintained in both themes across all views.
+- Theme transitions respect `prefers-reduced-motion`.
+
+---
+
+## 2026-09-30
+
+### Post-F5 Enhancement — Public Product Landing Page & Ledger Brand Navigation: COMPLETED
+
+To provide a clear public architectural showcase and separate public exploration from the internal application console, a public landing page and connected brand navigation were implemented.
+
+#### What Was Implemented
+
+**Public Landing Page (`/`)**
+- Wired `/` in `AppRoutes.tsx` to `LandingPage.tsx` within a dedicated `LandingLayout.tsx` (completely separate from `AppShell` and sidebar).
+- Shifted internal application dashboard entry point to `/dashboard`.
+- Landing page sections:
+  - **Public Header**: Ledger branding, GitHub repository link, theme toggle, and "Open Console" action navigating to `/dashboard`.
+  - **Hero Section**: Architectural headline ("Immutable Financial Ledger"), sub-copy explaining double-entry and event sourcing, primary CTA ("Launch Application"), and secondary documentation link.
+  - **Core Capabilities Grid**: Double-entry bookkeeping, append-only event sourcing, server-authoritative state, and point-in-time reconstruction cards.
+  - **Architecture Overview**: ASCII/SVG visual pipeline of event persistence, double-entry ledger allocation, and deterministic balance reconstruction.
+  - **Technology Stack**: Backend (Java 21, Spring Boot 3.5, PostgreSQL 18, Flyway) and Frontend (React 19, TypeScript 5.8, TanStack Query, Vite) specifications.
+  - **Product Preview & Final CTA**: Interactive feature summary card and direct link to `/dashboard`.
+  - **Footer**: Institutional copyright and documentation links.
+- Strictly authentic technical claims: no marketing fluff, fake statistics, testimonials, or pricing.
+- Responsive across mobile, tablet, and desktop viewports.
+
+**Internal Header Brand Navigation Fix**
+- Updated the top-left "Ledger" logo and title in `TopBar.tsx` to a semantic React Router `<Link to="/">` with accessible label `Event-Sourced Ledger Home`.
+- Preserved exact visual styling while adding accessible hover and focus-visible indicators.
+- Enables seamless navigation from any internal console page back to the public landing page.
+
+#### Final Verification State (Milestone Complete)
+
+```text
+TypeScript Typecheck: PASS (tsc -b, 0 errors)
+ESLint:               PASS (0 errors, 0 warnings across all files)
+Vitest Suite:         PASS (210/210 passed across 24 test files)
+Playwright E2E:       PASS (7/7 passed in Chromium across 3 test specs:
+                            critical-journey.spec.ts: 1 test
+                            landing-page.spec.ts: 4 tests
+                            theme-and-sidebar.spec.ts: 2 tests)
+Production Build:     PASS (npm run build — optimized static bundle in /dist)
+Backend Diff:         Completely clean / untouched (0 modifications)
+```
+
+#### New ADRs Recorded
+
+- ADR-034: Public Landing Page and Internal Application Shell Routing Boundary: Dedicated Public Layout, Internal `/dashboard` Entry Point, and Brand Navigation
+- ADR-035: Application-Wide Theme Architecture: Semantic Token Inversion, Anti-Flash Inline Initialization, and Preference Persistence
+- ADR-036: Collapsible Desktop Navigation Shell: Persistent Drawer State, Isolated Breakpoint Context, and Accessible Iconography
+
+No git commit has been created; all changes remain pending the final user-driven commit.
 

@@ -40,7 +40,7 @@ export default [
       ...reactHooks.configs.recommended.rules,
 
       // React Refresh (Vite HMR compatibility)
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'react-refresh/only-export-components': 'off',
 
       // Explicit type imports — improves tree-shaking
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],

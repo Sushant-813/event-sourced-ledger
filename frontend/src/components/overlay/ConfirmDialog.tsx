@@ -125,7 +125,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         }
 
         .confirm-dialog-btn--secondary:hover:not(:disabled) {
-          background: #e2e5e9;
+          background: var(--surface-strong-hover);
         }
 
         .confirm-dialog-btn--primary {

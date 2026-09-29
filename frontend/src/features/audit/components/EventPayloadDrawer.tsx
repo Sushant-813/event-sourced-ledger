@@ -201,7 +201,7 @@ export const EventPayloadDrawer: React.FC<EventPayloadDrawerProps> = ({
           gap: var(--space-sm);
           padding: var(--space-sm) var(--space-base);
           background: var(--surface-warning-soft);
-          border: 1px solid #fde68a;
+          border: 1px solid var(--border-warning-soft);
           border-radius: var(--radius-md);
           color: var(--color-warning);
         }

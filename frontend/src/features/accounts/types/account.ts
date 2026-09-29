@@ -5,7 +5,7 @@
  * Imports shared enums from @/types/enums (does not duplicate them).
  * Matches backend contracts in docs/API_GUIDELINES.md §21.
  */
-import { AccountStatus, AccountType } from '@/types/enums'
+import type { AccountStatus, AccountType } from '@/types/enums'
 import type { PaginationParams, SortParams } from '@/types/common'
 
 /**

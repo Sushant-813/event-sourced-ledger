@@ -26,9 +26,9 @@ const VARIANT_CONFIG: Record<
   { bg: string; border: string; color: string; icon: React.ReactNode }
 > = {
   success: {
-    bg: '#ecfdf5',
-    border: '#a7f3d0',
-    color: '#047857',
+    bg: 'var(--color-success-soft)',
+    border: 'var(--border-success-soft)',
+    color: 'var(--color-success)',
     icon: (
       <svg
         width="18"
@@ -46,9 +46,9 @@ const VARIANT_CONFIG: Record<
     ),
   },
   error: {
-    bg: '#fef2f2',
-    border: '#fecaca',
-    color: '#cf202f',
+    bg: 'var(--surface-error-soft)',
+    border: 'var(--border-error-soft)',
+    color: 'var(--color-negative)',
     icon: (
       <svg
         width="18"
@@ -67,9 +67,9 @@ const VARIANT_CONFIG: Record<
     ),
   },
   warning: {
-    bg: '#fffbeb',
-    border: '#fde68a',
-    color: '#b77900',
+    bg: 'var(--color-warning-soft)',
+    border: 'var(--border-warning-soft)',
+    color: 'var(--color-warning)',
     icon: (
       <svg
         width="18"
@@ -88,9 +88,9 @@ const VARIANT_CONFIG: Record<
     ),
   },
   info: {
-    bg: '#eff6ff',
-    border: '#bfdbfe',
-    color: '#0052ff',
+    bg: 'var(--color-primary-soft)',
+    border: 'var(--border-info-soft)',
+    color: 'var(--color-primary)',
     icon: (
       <svg
         width="18"

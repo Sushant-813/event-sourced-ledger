@@ -223,6 +223,7 @@ All error handling must be built around the single documented `ApiError` contrac
 
 - **Server state** (accounts, transactions, ledger entries, events, audit trail, balances) must be modeled as request-scoped, revalidatable data — not held as frontend-owned mutable state.
 - **UI state** (modal open/closed, active tab, selected filter values) is local and ephemeral.
+- **Persistent client state**: user preferences for visual theme (`light` | `dark` stored under `esl_theme`) and desktop sidebar layout (`expanded` | `collapsed` stored under `esl_sidebar_collapsed`) persist across page reloads via `localStorage`.
 - **Form state** (in-progress input, validation errors, submit-in-progress) is local to the form until a successful mutation response is received.
 - **Loading state** must be represented at two granularities: initial full-view load, and scoped table/list load during paging/sorting/filtering, per `FRONTEND_PRD.md` §16.
 - **Mutation state**: the triggering control must reflect a busy/disabled state for the duration of a create/lifecycle/monetary request, preventing duplicate submission (`FRONTEND_PRD.md` §16) — this is required specifically because no idempotency-key mechanism exists yet (`API_GUIDELINES.md` §15, `FRONTEND_PRD.md` §20) to protect against accidental duplicate financial requests at the backend.
@@ -235,14 +236,17 @@ All error handling must be built around the single documented `ApiError` contrac
 
 ## 12. Routing and Navigation Requirements
 
-- The application requires addressable routes for: Dashboard, Account List, Account Creation, Account Overview (by internal `id`), and the four account-scoped sub-views (Transactions, Ledger, Events, Audit Trail), per `FRONTEND_PRD.md` §4, §7.2, §24.
+- **Public Route (`/`):** The public landing page is rendered at `/` using a dedicated public layout without the internal application sidebar. It showcases double-entry concepts, event-sourcing principles, and architectural capabilities.
+- **Application Console Route (`/dashboard`):** The internal application home starts at `/dashboard` within the application shell (`RootLayout` / `AppShell`) with full sidebar and operational navigation.
+- **Application Header Brand Navigation:** The Ledger brand element in the internal application header (`TopBar`) acts as a home link navigating to `/` with an accessible label.
+- The application requires addressable routes for: Landing Page (`/`), Dashboard (`/dashboard`), Account List (`/accounts`), Account Overview (`/accounts/:accountId/overview`), and the four account-scoped sub-views (Transactions, Ledger, Events, Audit Trail), per `FRONTEND_PRD.md` §4, §7.2, §24.
 - Account context must be carried via a route parameter (internal `accountId`), enabling deep-linking directly into a specific account's Overview or any sub-view.
 - A route requesting an account `id` that resolves to `404` (missing, or resolves to `SYS-CASH`, which is never a valid frontend target — `DATABASE_DESIGN.md` §17) must render the account-not-found state defined in `FRONTEND_PRD.md` §6.3/§8.3, not a raw error or blank page.
 - A browser refresh on any account-scoped route must reproduce the same view by re-fetching from the `accountId` in the URL — no reliance on in-memory-only navigation state to reconstruct the view.
-- Navigating away from and back to a paginated/sorted/filtered view may either preserve or reset query-string state (page/size/sort/filter as URL parameters is one acceptable technical approach); the exact mechanism is deferred to `FRONTEND_ARCHITECTURE.md`. If query parameters are used to encode pagination/sort/filter state, they must only ever encode the fields the capability matrix (`FRONTEND_PRD.md` §15) actually allows for that endpoint.
+- Query-string state encodes pagination, sort, filter, and `asOf` parameters, strictly limited to the fields the capability matrix (`FRONTEND_PRD.md` §15) allows for that endpoint.
 - An invalid/unroutable path must render a not-found route state, distinct from an account-not-found state.
 
-This section defines routing *requirements*; the final route tree and file/module organization are deferred to `FRONTEND_ARCHITECTURE.md`.
+This section defines routing *requirements*; the final route tree and file/module organization are formalized in `FRONTEND_ARCHITECTURE.md`.
 
 ---
 
@@ -306,6 +310,7 @@ Testing categories required at the technical-requirement level (exact tooling an
 - **Audit Trail testing** — confirming `finalBalance` and `totalElements` remain stable and correct across pages, including the out-of-range case (§11, `FRONTEND_PRD.md` §13.4).
 - **Historical `asOf` testing** — confirming inclusive boundary semantics (§8) are represented correctly in both the balance panel and the Audit Trail view.
 - **Error-state testing** — one representative test per documented status class (§10), not an exhaustive enumeration of every possible message.
+- **End-to-End (E2E) browser testing** — automated browser tests using Playwright (`@playwright/test`) executing critical financial journeys (account creation -> deposit -> transfer -> balance verification -> audit trail inspection) and public landing page navigation/theme persistence against a live backend.
 
 This section defines coverage *categories*; it does not prescribe an exact test count or file structure.
 

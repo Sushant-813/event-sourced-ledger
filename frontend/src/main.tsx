@@ -16,6 +16,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ThemeProvider } from './features/theme/ThemeProvider'
 import { ToastProvider } from './components/feedback/ToastProvider'
 import { AppRoutes } from './routes/AppRoutes'
 import './styles/main.css'
@@ -38,11 +39,13 @@ if (rootElement === null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <AppRoutes />
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>
 )
 

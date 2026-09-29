@@ -23,21 +23,21 @@ const STATUS_CONFIG: Record<
 > = {
   [AccountStatus.ACTIVE]: {
     label: 'ACTIVE',
-    bg: '#ecfdf5',
-    color: '#047857',
-    border: '#a7f3d0',
+    bg: 'var(--color-success-soft)',
+    color: 'var(--color-success)',
+    border: 'var(--border-success-soft)',
   },
   [AccountStatus.FROZEN]: {
     label: 'FROZEN',
-    bg: '#fffbeb',
-    color: '#b77900',
-    border: '#fde68a',
+    bg: 'var(--color-warning-soft)',
+    color: 'var(--color-warning)',
+    border: 'var(--border-warning-soft)',
   },
   [AccountStatus.CLOSED]: {
     label: 'CLOSED',
-    bg: '#f7f8fa',
-    color: '#595e68',
-    border: '#dee1e6',
+    bg: 'var(--surface-soft)',
+    color: 'var(--color-muted)',
+    border: 'var(--border-hairline)',
   },
 }
 

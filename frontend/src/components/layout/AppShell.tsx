@@ -22,12 +22,21 @@ import { useState, type ReactNode } from 'react'
 import { TopBar } from './TopBar'
 import { Sidebar } from './Sidebar'
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'esl_sidebar_collapsed'
+
 interface AppShellProps {
   children: ReactNode
 }
 
 export function AppShell({ children }: AppShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
 
   function handleMobileMenuToggle() {
     setIsMobileMenuOpen((prev) => !prev)
@@ -35,6 +44,18 @@ export function AppShell({ children }: AppShellProps) {
 
   function handleSidebarClose() {
     setIsMobileMenuOpen(false)
+  }
+
+  function handleToggleSidebarCollapse() {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
+      } catch {
+        // Ignore storage write errors (sandboxed / private mode)
+      }
+      return next
+    })
   }
 
   return (
@@ -49,12 +70,17 @@ export function AppShell({ children }: AppShellProps) {
         isMobileMenuOpen={isMobileMenuOpen}
       />
 
-      <Sidebar isOpen={isMobileMenuOpen} onClose={handleSidebarClose} />
+      <Sidebar
+        isOpen={isMobileMenuOpen}
+        onClose={handleSidebarClose}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebarCollapse}
+      />
 
       {/* Main content region */}
       <main
         id="main-content"
-        className="app-shell__main"
+        className={`app-shell__main${isSidebarCollapsed ? ' app-shell__main--collapsed' : ''}`}
         tabIndex={-1}
         aria-label="Main content"
       >
@@ -84,12 +110,26 @@ export function AppShell({ children }: AppShellProps) {
           background: var(--surface-soft);
           /* Remove default focus outline — the skip-link target doesn't need a ring */
           outline: none;
+          transition: margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @media (min-width: 1024px) {
+          .app-shell__main--collapsed {
+            margin-left: var(--layout-sidebar-collapsed-width);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .app-shell__main {
+            transition: none;
+          }
         }
 
         /* Mobile: no sidebar offset */
         @media (max-width: 1023px) {
           .app-shell__main {
             margin-left: 0;
+            transition: none;
           }
         }
       `}</style>

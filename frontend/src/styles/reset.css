@@ -124,3 +124,18 @@ input, select, textarea {
   white-space: nowrap;
   border-width: 0;
 }
+
+/*
+ * Smooth theme transitions
+ * Subtle background and border interpolation when toggling themes.
+ */
+body, .topbar, .sidebar, .app-shell__main, .metric-card, .data-table, .modal-container {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body, .topbar, .sidebar, .app-shell__main, .metric-card, .data-table, .modal-container {
+    transition: none !important;
+  }
+}
+

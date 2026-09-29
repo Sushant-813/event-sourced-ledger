@@ -8,6 +8,9 @@
  *   - Uses <header> semantic landmark (FRONTEND_ARCHITECTURE.md §16.1)
  *   - ARIA label distinguishes it from other landmarks
  */
+import { Link } from 'react-router-dom'
+import { ThemeToggle } from '../theme/ThemeToggle'
+
 interface TopBarProps {
   onMobileMenuToggle: () => void
   isMobileMenuOpen: boolean
@@ -31,8 +34,12 @@ export function TopBar({ onMobileMenuToggle, isMobileMenuOpen }: TopBarProps) {
         </span>
       </button>
 
-      {/* Application identity */}
-      <div className="topbar__brand">
+      {/* Application identity — navigates to public landing page */}
+      <Link
+        to="/"
+        className="topbar__brand"
+        aria-label="Event-Sourced Ledger Home"
+      >
         <svg
           className="topbar__logo"
           viewBox="0 0 24 24"
@@ -49,6 +56,11 @@ export function TopBar({ onMobileMenuToggle, isMobileMenuOpen }: TopBarProps) {
           <rect x="11" y="5" width="2" height="12" rx="1" fill="currentColor" opacity="0.25" />
         </svg>
         <span className="topbar__title">Ledger</span>
+      </Link>
+
+      {/* Header controls (theme toggle, future user profile, etc.) */}
+      <div className="topbar__actions">
+        <ThemeToggle />
       </div>
 
       <style>{`
@@ -67,11 +79,32 @@ export function TopBar({ onMobileMenuToggle, isMobileMenuOpen }: TopBarProps) {
           z-index: 100;
         }
 
+        .topbar__actions {
+          margin-left: auto;
+          display: flex;
+          align-items: center;
+          gap: var(--space-sm);
+        }
+
         .topbar__brand {
           display: flex;
           align-items: center;
           gap: var(--space-xs);
           color: var(--color-primary);
+          text-decoration: none;
+          border-radius: var(--radius-xs);
+          padding: 2px 4px;
+          margin-left: -4px;
+          transition: opacity 0.15s ease;
+        }
+
+        .topbar__brand:hover {
+          opacity: 0.85;
+        }
+
+        .topbar__brand:focus-visible {
+          outline: 2px solid var(--color-primary);
+          outline-offset: 2px;
         }
 
         .topbar__logo {

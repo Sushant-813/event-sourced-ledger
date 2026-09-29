@@ -48,7 +48,7 @@ const mockAccount: AccountResponse = {
 function renderDepositModal(props?: {
   isOpen?: boolean
   onClose?: () => void
-  account?: AccountResponse
+  account?: AccountResponse | null
   queryClient?: QueryClient
 }) {
   const qc =
@@ -61,13 +61,14 @@ function renderDepositModal(props?: {
     })
 
   const onClose = props?.onClose ?? vi.fn()
+  const accountProp = props?.account === null ? undefined : (props?.account ?? mockAccount)
 
   const utils = render(
     <QueryClientProvider client={qc}>
       <DepositModal
         isOpen={props?.isOpen ?? true}
         onClose={onClose}
-        account={props?.account ?? mockAccount}
+        account={accountProp}
       />
     </QueryClientProvider>
   )
@@ -255,6 +256,66 @@ describe('DepositModal', () => {
     await waitFor(() => {
       expect(screen.getByTestId('deposit-error-banner')).toBeInTheDocument()
       expect(screen.getByText(/Unable to connect to the ledger server/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('Contextual vs Standalone modes', () => {
+    it('contextual mode: renders fixed account context badge and no dropdown', () => {
+      renderDepositModal({ account: mockAccount })
+      expect(screen.getByText('Target Account')).toBeInTheDocument()
+      expect(screen.getByText('Alice Savings')).toBeInTheDocument()
+      expect(screen.queryByTestId('deposit-account-select')).not.toBeInTheDocument()
+    })
+
+    it('standalone/dashboard mode: renders account selector and deposits into selected account', async () => {
+      const user = userEvent.setup()
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        content: [
+          mockAccount,
+          { id: 20, accountNumber: 'ACC-2002', accountName: 'Bob Current', status: AccountStatus.ACTIVE },
+        ],
+        page: 0,
+        size: 100,
+        totalPages: 1,
+        totalElements: 2,
+      })
+
+      renderDepositModal({ account: null })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('deposit-account-select')).toBeInTheDocument()
+      })
+
+      // Validation error if no account selected
+      await user.click(screen.getByTestId('deposit-submit-button'))
+      expect(screen.getByText('Please select a target account')).toBeInTheDocument()
+
+      // Select account and submit deposit
+      await user.selectOptions(screen.getByTestId('deposit-account-select'), '20')
+      const input = screen.getByLabelText(/Deposit Amount/i)
+      fireEvent.change(input, { target: { value: '250.00' } })
+
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        transactionId: 999,
+        referenceNumber: 'ref-standalone-deposit',
+        transactionType: TransactionType.DEPOSIT,
+        status: TransactionStatus.COMPLETED,
+        accountId: 20,
+        amount: '250.00',
+        createdAt: '2026-09-30T10:00:00Z',
+      })
+
+      await user.click(screen.getByTestId('deposit-submit-button'))
+
+      await waitFor(() => {
+        expect(apiClient).toHaveBeenCalledWith('/accounts/20/deposit', expect.objectContaining({
+          method: 'POST',
+        }))
+        expect(mockToastSuccess).toHaveBeenCalledWith(
+          'Deposit Successful',
+          expect.stringContaining('ref-standalone-deposit')
+        )
+      })
     })
   })
 })

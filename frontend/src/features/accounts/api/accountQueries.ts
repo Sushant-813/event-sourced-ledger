@@ -25,7 +25,8 @@ export const accountKeys = {
  * Endpoint: GET /accounts
  */
 export function useAccounts(
-  params?: AccountListParams
+  params?: AccountListParams,
+  options?: { enabled?: boolean }
 ): UseQueryResult<PagedResponse<AccountResponse>, unknown> {
   return useQuery({
     queryKey: accountKeys.list(params),
@@ -40,6 +41,7 @@ export function useAccounts(
           accountType: params?.accountType,
         },
       }),
+    ...(options?.enabled !== undefined ? { enabled: options.enabled } : {}),
   })
 }
 

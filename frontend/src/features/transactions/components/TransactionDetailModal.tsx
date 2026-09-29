@@ -209,7 +209,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           gap: var(--space-xs);
           padding: var(--space-sm) var(--space-base);
           background: var(--surface-info-soft);
-          border: 1px solid #bfdbfe;
+          border: 1px solid var(--border-info-soft);
           border-radius: var(--radius-md);
           color: var(--color-info);
         }

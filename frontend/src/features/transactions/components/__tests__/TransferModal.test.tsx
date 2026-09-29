@@ -12,7 +12,7 @@
  *   - Successful mutation: invalidates balance queries for BOTH source and destination
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransferModal } from '../TransferModal'
@@ -71,7 +71,7 @@ const mockSysCashAccount: AccountResponse = {
 function renderTransferModal(props?: {
   isOpen?: boolean
   onClose?: () => void
-  account?: AccountResponse
+  account?: AccountResponse | null
   queryClient?: QueryClient
 }) {
   const qc =
@@ -84,13 +84,14 @@ function renderTransferModal(props?: {
     })
 
   const onClose = props?.onClose ?? vi.fn()
+  const accountProp = props?.account === null ? undefined : (props?.account ?? mockSourceAccount)
 
   const utils = render(
     <QueryClientProvider client={qc}>
       <TransferModal
         isOpen={props?.isOpen ?? true}
         onClose={onClose}
-        account={props?.account ?? mockSourceAccount}
+        account={accountProp}
       />
     </QueryClientProvider>
   )
@@ -339,6 +340,91 @@ describe('TransferModal', () => {
       expect(
         screen.getByText(/Source and destination accounts must be different/i)
       ).toBeInTheDocument()
+    })
+  })
+
+  describe('Contextual vs Standalone modes', () => {
+    it('contextual mode: displays source account context box and no source dropdown', async () => {
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        content: [mockDestinationAccount],
+        page: 0,
+        size: 100,
+        totalPages: 1,
+        totalElements: 1,
+      })
+
+      renderTransferModal({ account: mockSourceAccount })
+
+      expect(screen.getByText('Source Account')).toBeInTheDocument()
+      expect(screen.getByText('Alice Savings')).toBeInTheDocument()
+      expect(screen.queryByTestId('transfer-source-select')).not.toBeInTheDocument()
+    })
+
+    it('standalone/dashboard mode: renders source account selector and transfers funds', async () => {
+      const user = userEvent.setup()
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        content: [mockSourceAccount, mockDestinationAccount, mockSysCashAccount],
+        page: 0,
+        size: 100,
+        totalPages: 1,
+        totalElements: 3,
+      })
+
+      renderTransferModal({ account: null })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('transfer-source-select')).toBeInTheDocument()
+      })
+
+      // Invariant: SYS-CASH is excluded from source dropdown
+      expect(screen.queryByText(/SYS-CASH/i)).not.toBeInTheDocument()
+
+      // Invariant: Validation errors if fields missing
+      await user.click(screen.getByTestId('transfer-submit-button'))
+      expect(screen.getByText('Source account is required')).toBeInTheDocument()
+      expect(screen.getByText('Destination account is required')).toBeInTheDocument()
+
+      // Select source account
+      await user.selectOptions(screen.getByTestId('transfer-source-select'), '10')
+
+      // Destination dropdown should now exclude selected source account (10)
+      const destSelect = screen.getByLabelText(/Destination Account/i)
+      expect(within(destSelect).queryByText(/Alice Savings/i)).not.toBeInTheDocument()
+      expect(within(destSelect).getByText(/Bob Checking/i)).toBeInTheDocument()
+
+      // Select destination account
+      await user.selectOptions(destSelect, '20')
+
+      // Enter amount
+      const amountInput = screen.getByLabelText(/Transfer Amount/i)
+      await user.type(amountInput, '350.00')
+
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        transactionId: 777,
+        referenceNumber: 'ref-transfer-standalone',
+        transactionType: TransactionType.TRANSFER,
+        status: TransactionStatus.COMPLETED,
+        accountId: 10,
+        amount: '350.00',
+        createdAt: '2026-09-30T10:00:00Z',
+      })
+
+      await user.click(screen.getByTestId('transfer-submit-button'))
+
+      await waitFor(() => {
+        expect(apiClient).toHaveBeenCalledWith('/transfers', expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            sourceAccountId: 10,
+            destinationAccountId: 20,
+            amount: '350.00',
+          }),
+        }))
+        expect(mockToastSuccess).toHaveBeenCalledWith(
+          'Transfer Successful',
+          expect.stringContaining('ref-transfer-standalone')
+        )
+      })
     })
   })
 })

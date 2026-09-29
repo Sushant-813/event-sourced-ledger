@@ -2247,7 +2247,180 @@ Positive
 
 Negative
 
-- Deep-link URLs contain encoded UTC timestamps (e.g. `asOf=2026-09-28T18%3A30%3A00.000Z`), which are longer than simple date strings.
+---
+
+# ADR-034
+
+## Title
+
+Public Landing Page and Internal Application Shell Routing Boundary: Dedicated Public Layout, Internal `/dashboard` Entry Point, and Brand Navigation
+
+### Status
+
+Accepted
+
+### Context
+
+The original frontend routing mapped both `/` and `/dashboard` to `DashboardPage` within the monolithic `RootLayout` (`AppShell`), which includes the application sidebar, active account context tabs, and internal management navigation.
+
+To provide a public-facing architectural showcase that explains the double-entry accounting engine and event-sourcing mechanics to auditors, evaluators, and engineers without exposing internal operational controls or cluttering the operational console, a public landing page was required.
+
+Key architectural considerations:
+1. Public visitors should experience a clean architectural overview without sidebar navigation or internal operational chrome.
+2. Internal console operators require a dedicated application entry point at `/dashboard` with full management controls and metrics.
+3. The internal application `TopBar` brand logo should provide an intuitive, accessible link back to the public architectural overview at `/`.
+4. Navigating between public and internal surfaces must use client-side SPA routing (`react-router-dom`) without full-page `window.location` refreshes.
+
+### Decision
+
+1. **Decouple `/` from `/dashboard`:**
+   - `/` renders `LandingPage` wrapped in a dedicated, lightweight `LandingLayout`, completely devoid of the internal application sidebar.
+   - `/dashboard` serves as the internal application landing page wrapped in `RootLayout` (`AppShell`).
+2. **TopBar Brand Navigation:**
+   - Update the top-left "Ledger" logo and title in `TopBar.tsx` to a semantic React Router `<Link to="/">` with an accessible label `aria-label="Event-Sourced Ledger Home"`.
+   - Preserve institutional visual typography and alignment, adding accessible `:hover` and `:focus-visible` states.
+3. **Route Boundary Preservation:**
+   - Account directory, creation, detail, monetary operations, and audit trail routes (`/accounts/*`) remain strictly within the internal application shell (`RootLayout` / `AppShell`).
+   - The public landing page does not participate in financial mutations or server state queries.
+
+### Alternatives Considered
+
+- **Keep `/` as the dashboard and place the landing page at `/about` or `/landing`:** Rejected because standard web conventions place public product and architectural showcases at the root `/`, while internal management consoles conventionally reside at `/dashboard` or `/app`.
+- **Conditionally hide the sidebar inside `AppShell` for the landing page:** Rejected because it tightly couples public presentation markup to the internal operational shell and bloats layout logic with conditional checks.
+- **Hardcoded `window.location.href = '/'`:** Rejected because it triggers a full browser reload, discarding in-memory client state and violating SPA routing best practices.
+
+### Rationale
+
+Decoupling the public landing page into its own layout provides clean separation of concerns, guarantees that public users cannot interact with internal layout states, and keeps the operational console focused on financial workflow integrity.
+
+### Consequences
+
+Positive
+
+- Clean architectural separation between public showcase and internal management console.
+- Zero sidebar intrusion on public views.
+- Seamless, accessible SPA navigation between console and landing page.
+- Direct alignment with standard web application routing conventions.
+
+Negative
+
+- Direct navigations to `/` now display the public landing page rather than the internal dashboard; operators click "Launch Application" or navigate directly to `/dashboard`.
+
+---
+
+# ADR-035
+
+## Title
+
+Application-Wide Theme Architecture: Semantic Token Inversion, Anti-Flash Inline Initialization, and Preference Persistence
+
+### Status
+
+Accepted
+
+### Context
+
+Financial operators frequently work in low-light environments and require a dark visual theme to reduce eye fatigue. The original `DESIGN.md §30` design tokens were defined for a light institutional palette.
+
+Introducing dark mode in a data-dense financial application requires addressing several technical requirements:
+1. **Avoid Flash of Unstyled Content (FOUC):** Reading theme preference asynchronously in React causes a blinding white flash on page refresh in dark mode before React mounts.
+2. **Complete Coverage:** Dark mode must apply across all public and internal components (TopBar, Sidebar, tables, modals, drawers, cards, badges) without hardcoded inline colors.
+3. **Contrast Compliance:** Inverted colors must maintain WCAG 2.1 AA contrast ($\ge 4.5:1$ for normal text).
+4. **Motion Safety:** Theme switching transitions must respect `prefers-reduced-motion`.
+
+### Decision
+
+1. **Theme State & Context (`src/features/theme/`):**
+   - Implement `ThemeProvider` and `useTheme` managing `'light' | 'dark'` state and exposing `toggleTheme()`.
+   - Persist active theme in `localStorage` under `esl_theme`.
+2. **Anti-Flash Synchronous Initialization:**
+   - Add a synchronous inline script in the `<head>` of `index.html` that evaluates `localStorage.getItem('esl_theme')` (with fallback to `window.matchMedia('(prefers-color-scheme: dark)')`) and immediately sets `data-theme` on `document.documentElement` before stylesheets are parsed, completely eliminating FOUC.
+3. **Semantic Token Inversion in `tokens.css`:**
+   - Extend `tokens.css` with semantic overrides under `[data-theme="dark"]`, inverting surfaces (`--surface-canvas: #0a0b0d`, `--surface-card: #14171c`), text inks (`--color-ink: #f0f2f5`, `--color-body: #a0a6b2`), and borders (`--border-hairline: #22262e`).
+4. **Ad-Hoc Color Elimination:**
+   - Migrate all ad-hoc hardcoded color declarations in UI components to semantic CSS custom properties.
+5. **Motion Safety:**
+   - Wrap theme transition smoothing in media queries that respect `prefers-reduced-motion: reduce`.
+
+### Alternatives Considered
+
+- **Pure CSS `prefers-color-scheme` without user toggle:** Rejected because operators require explicit manual control independent of system OS settings.
+- **CSS-in-JS theming engine (styled-components / Emotion):** Rejected because the project avoids CSS-in-JS dependencies and relies on pure CSS custom properties per `DESIGN.md §30`.
+- **Asynchronous theme loading inside `useEffect`:** Rejected because it causes a noticeable white flash on every page reload.
+
+### Rationale
+
+CSS custom properties combined with synchronous HTML root attribute injection provide the fastest, zero-dependency theme switching architecture possible, ensuring instant rendering and strict contrast compliance.
+
+### Consequences
+
+Positive
+
+- Zero white flash on page load in dark mode.
+- Application-wide consistency across all views and modals.
+- Full WCAG AA contrast maintained in both modes.
+- Respects system preferences and allows manual override.
+
+Negative
+
+- Requires maintaining two sets of surface and ink color mappings in `tokens.css`.
+
+---
+
+# ADR-036
+
+## Title
+
+Collapsible Desktop Navigation Shell: Persistent Drawer State, Isolated Breakpoint Context, and Accessible Iconography
+
+### Status
+
+Accepted
+
+### Context
+
+The internal application layout includes dense financial data tables (Transactions, Ledger Entries, Audit Trail) that require maximum horizontal viewport space on desktop screens (1024px–1920px+). The original 240px static sidebar consumed significant horizontal width.
+
+Technical requirements:
+1. Allow desktop users to collapse the sidebar from 240px to 64px icon-only mode.
+2. Persist the collapsed/expanded preference across page reloads.
+3. Keep desktop collapse behavior strictly decoupled from the mobile off-canvas drawer (<1024px).
+4. Provide accessible tooltips and screen reader state announcements (`aria-expanded`).
+
+### Decision
+
+1. **Collapsible Desktop Sidebar:**
+   - Add `isCollapsed` state to `Sidebar.tsx`, toggled via a dedicated collapse button in the sidebar footer.
+   - Expanded state: 240px width with icons and text labels.
+   - Collapsed state: 64px width with centered icons and accessible hover/focus tooltips.
+2. **Preference Persistence:**
+   - Persist state in `localStorage` under `esl_sidebar_collapsed` and restore on initial load.
+3. **Decoupled Breakpoint Behavior:**
+   - Desktop collapse operates strictly on viewports $\ge 1024\text{px}$. On mobile/tablet viewports ($<1024\text{px}$), the sidebar operates as an off-canvas drawer controlled by the `TopBar` hamburger button.
+4. **Accessibility & Reduced Motion:**
+   - The collapse button provides explicit `aria-expanded` and `aria-label` attributes.
+   - Smooth CSS width and opacity transitions (0.2s ease) respect `prefers-reduced-motion: reduce`.
+
+### Alternatives Considered
+
+- **Pure hover-to-expand sidebar:** Rejected because accidental hover triggers jarring layout shifts for financial operators.
+- **Shared state for mobile drawer and desktop collapse:** Rejected because mobile off-canvas overlays and desktop column sizing have completely different geometry and interaction semantics.
+
+### Rationale
+
+Giving operators full control over sidebar width allows data-dense financial tables to utilize up to 176px of additional horizontal screen space, improving scannability of audit timestamps and running balances.
+
+### Consequences
+
+Positive
+
+- Maximized desktop workspace for multi-column financial tables.
+- Persistent user preference across reloads.
+- Full keyboard and screen reader accessibility.
+
+Negative
+
+- Tooltip positioning requires careful viewport-boundary awareness in collapsed mode.
 
 ---
 

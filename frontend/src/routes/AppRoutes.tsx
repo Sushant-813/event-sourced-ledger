@@ -24,6 +24,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { RootLayout } from './RootLayout'
 import { AccountLayout } from './AccountLayout'
 import { NotFoundPage } from './NotFoundPage'
+import { LandingPage } from '@/features/landing/pages/LandingPage'
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage'
 import { AccountsPage } from '@/features/accounts/pages/AccountsPage'
 import { AccountOverviewPage } from '@/features/accounts/pages/AccountOverviewPage'
@@ -32,20 +33,18 @@ import { AccountLedgerPage } from '@/features/audit/pages/AccountLedgerPage'
 import { AccountEventsPage } from '@/features/audit/pages/AccountEventsPage'
 import { AuditTrailPage } from '@/features/audit/pages/AuditTrailPage'
 
-
-
 const router = createBrowserRouter([
+  // Public Landing Page (dedicated public layout)
   {
     path: '/',
+    element: <LandingPage />,
+  },
+
+  // Authenticated/Application Shell routes
+  {
     element: <RootLayout />,
     children: [
-      // Root redirect → /dashboard
-      {
-        index: true,
-        element: <Navigate to="/dashboard" replace />,
-      },
-
-      // Dashboard — F0 placeholder
+      // Dashboard
       {
         path: 'dashboard',
         element: <DashboardPage />,

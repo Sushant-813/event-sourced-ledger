@@ -10,7 +10,12 @@
 - **Frontend Phase F2 — Monetary Operations:** COMPLETED (2026-09-27)  
 - **Frontend Phase F3 — Financial History:** COMPLETED (2026-09-28)  
 - **Frontend Phase F4 — Audit Experience:** COMPLETED (2026-09-29)  
-- **Frontend Implementation (Phase F5):** NEXT / READY FOR EXECUTION (Phase F5 Next)  
+- **Frontend Phase F5 — Dashboard & Release Readiness:** COMPLETED (2026-09-30)  
+- **Post-F5 Frontend Enhancements:** COMPLETED (2026-09-30)  
+  - Collapsible Desktop Sidebar (240px / 64px with persistence)  
+  - Application-Wide Light/Dark Theme System (tokenized with persistence)  
+  - Public Product Landing Page (`/`) with Dedicated Public Layout  
+  - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Future Enhancements:** DEFERRED / POST-v1.0  
 
 ---
@@ -25,8 +30,9 @@ The project intentionally followed a **backend-first** methodology:
 1. Financial domain correctness and double-entry invariants were established first.
 2. Backend v1.0.0 was fully stabilized, tested, and released.
 3. Frontend planning and architectural specifications were finalized.
-4. Frontend implementation can now proceed against a frozen, authoritative backend contract.
-5. Future enterprise capabilities remain strictly isolated from current v1.0 deliverables.
+4. Frontend implementation proceeded against the frozen, authoritative backend contract across Phases F0–F5.
+5. Post-F5 product-polish enhancements established desktop workspace flexibility, visual theme personalization, and public architectural positioning.
+6. Future enterprise capabilities remain strictly isolated from current v1.0 deliverables.
 
 ---
 
@@ -47,7 +53,8 @@ The project adheres to these core architectural and execution principles:
 ### 3.1 What is Covered
 - **Backend Core**: Event store, double-entry ledger, balance reconstruction, audit trail, pagination/sorting/filtering, pessimistic row locking, and REST APIs (**COMPLETED v1.0.0**).
 - **Frontend Planning**: Frozen PRD, TRD, Design System tokens, and Frontend Architecture (**COMPLETED**).
-- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Phase F3 (Financial History) COMPLETED (2026-09-28); Phase F4 (Audit Experience) COMPLETED (2026-09-29); Phase F5 (Dashboard & Cross-Cutting Quality) NEXT.
+- **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Phase F3 (Financial History) COMPLETED (2026-09-28); Phase F4 (Audit Experience) COMPLETED (2026-09-29); Phase F5 (Dashboard & Release Readiness) COMPLETED (2026-09-30).
+- **Post-F5 Frontend Enhancements**: Collapsible desktop sidebar, application-wide dark mode, public product landing page at `/`, and internal application header brand navigation to `/` (**COMPLETED 2026-09-30**).
 
 ### 3.2 What is Intentionally Deferred (Post-v1.0)
 - User authentication and Role-Based Access Control (RBAC).
@@ -516,28 +523,72 @@ Users can trace every balance change from genesis to present, navigate paginated
 
 ---
 
-## Phase F5 — Dashboard & Cross-Cutting Quality
+## Phase F5 — Dashboard & Release Readiness
+
+**Status: COMPLETED — 2026-09-30**
 
 ### Objective
 Implement the portfolio Dashboard, verify responsive layout behavior, enforce WCAG AA accessibility, and validate the end-to-end frontend build.
 
-### Deliverables
+### Deliverables Completed
 - Dashboard page (`/dashboard`) displaying **exactly three metrics**:
   - Total Accounts
   - Active Accounts
   - Frozen Accounts
-- Concurrently aggregated metrics via 3 lightweight parallel queries to `GET /accounts`.
+- Concurrently aggregated metrics via 3 lightweight parallel queries to `GET /accounts` consuming `totalElements`.
+- Zero client-side financial calculations; server-authoritative state strictly preserved.
 - Quick action shortcuts to trigger Account Creation, Deposit, Withdrawal, and Transfer modals.
+- Transfer workflow constraints preserved: active accounts only, `SYS-CASH` excluded, source and destination must differ, no optimistic updates.
 - Responsive layout verification across all 4 breakpoints (<640px, 640–1024px, 1024–1280px, >1280px with 1200px container cap).
 - Accessibility audit: keyboard focus traps, `aria-live` region announcements, skip links, and color-independent status badges (WCAG 2.1 AA).
 - Multi-tier automated testing:
   - Unit tests for `Money`, date formatters, and validators.
   - Component integration tests using Mock Service Worker (MSW).
-  - Playwright E2E tests for critical financial journeys (creation -> deposit -> transfer -> audit trail).
+  - Playwright E2E browser automation for the critical financial journey (creation -> deposit -> transfer -> audit trail).
 - Production build validation (`npm run build`) generating optimized static `/dist` bundle without typecheck or lint warnings.
 
-### Success Criteria
-Dashboard accurately displays portfolio counts, UI is fully responsive and keyboard-accessible, and all automated unit, integration, and E2E tests pass cleanly.
+### Verification Gates Passed
+- **Automated Tests:** `npm test` — **205/205 passed** across 23 test files (at F5 completion).
+- **TypeScript Typecheck:** `npm run typecheck` — **PASS** (0 errors).
+- **ESLint:** `npm run lint` — **PASS** (0 errors, 0 warnings).
+- **Playwright E2E:** `npx playwright test` — **PASS** (critical financial journey automated in real browser).
+- **Production Build:** `npm run build` — **PASS** (clean production bundle generated via Vite).
+
+---
+
+## Post-F5 Frontend Enhancements (Product Polish)
+
+**Status: COMPLETED — 2026-09-30**
+
+Following the formal completion and code review of Phase F5, four focused product-polish enhancements were implemented to elevate usability, workspace efficiency, and technical positioning without reopening F5 or modifying backend contracts:
+
+### 1. Collapsible Desktop Sidebar
+- Desktop sidebar supports expanded (240px) and collapsed (64px) states with smooth CSS transitions.
+- Fully keyboard-accessible toggle button with explicit `aria-expanded` and `aria-label` attributes.
+- Collapsed navigation items display accessible tooltips on hover and focus.
+- State persists across page reloads via `localStorage` (`esl_sidebar_collapsed`).
+- Desktop collapse behavior remains strictly decoupled from mobile off-canvas drawer behavior (<1024px).
+- Respects `prefers-reduced-motion` preferences.
+
+### 2. Application-Wide Light/Dark Theme System
+- Integrated `ThemeProvider` and `useTheme` hook for reactive, application-wide theme state.
+- `ThemeToggle` control integrated into `TopBar` and public landing page header.
+- Tokenized semantic design system in `tokens.css` extended with comprehensive dark mode variables under `[data-theme="dark"]`.
+- Theme preference persists across sessions via `localStorage` (`esl_theme`).
+- Anti-flash inline script in `index.html` prevents Flash of Unstyled Content (FOUC).
+- WCAG AA contrast ratios maintained across all text and UI elements in both light and dark themes.
+
+### 3. Public Product Landing Page (`/`)
+- Public showcase landing page introduced at `/` using a dedicated public layout (`LandingLayout`) without the internal application sidebar.
+- Internal application dashboard lives at `/dashboard` within `RootLayout` (`AppShell`).
+- Technical positioning highlights: double-entry accounting core, append-only event store, server-authoritative balances, point-in-time balance reconstruction, and account lifecycle governance.
+- Structured sections: dedicated header, hero, core capabilities, architecture overview, technology stack, product preview with CTA, and footer.
+- Zero marketing fluff, fake statistics, or unverified claims.
+
+### 4. Application Header Brand Navigation
+- Top-left "Ledger" logo and brand text in the internal application `TopBar` is clickable and navigates to `/`.
+- Uses semantic React Router `<Link to="/">` with accessible label `Event-Sourced Ledger Home`.
+- Preserves exact institutional visual styling while providing keyboard focus-visible indicators.
 
 ---
 
@@ -550,7 +601,8 @@ Dashboard accurately displays portfolio counts, UI is fully responsive and keybo
 | **MF2** | Deposit, Withdrawal & Transfer Workflows | COMPLETED (2026-09-27) | Phase F2 |
 | **MF3** | Transactions, Ledger Entries & Event Stream History | COMPLETED (2026-09-28) | Phase F3 |
 | **MF4** | Audit Trail & Historical Balance Reconstruction (`asOf`) | COMPLETED (2026-09-29) | Phase F4 |
-| **MF5** | Dashboard, Responsive / A11y Polish & End-to-End Validation | UPCOMING (Next) | Phase F5 |
+| **MF5** | Dashboard, Responsive / A11y Polish & End-to-End Validation | COMPLETED (2026-09-30) | Phase F5 |
+| **Post-F5** | Collapsible Sidebar, Dark Mode, Public Landing Page & Brand Nav | COMPLETED (2026-09-30) | Post-F5 Polish |
 
 ---
 

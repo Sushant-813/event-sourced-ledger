@@ -30,15 +30,15 @@ function renderStatusBadge(status: TransactionStatus) {
   if (status === TransactionStatus.COMPLETED) {
     bg = 'var(--surface-success-soft)'
     color = 'var(--color-positive-text)'
-    border = '#a7f3d0'
+    border = 'var(--border-success-soft)'
   } else if (status === TransactionStatus.PENDING) {
     bg = 'var(--surface-warning-soft)'
     color = 'var(--color-warning)'
-    border = '#fde68a'
+    border = 'var(--border-warning-soft)'
   } else if (status === TransactionStatus.FAILED) {
     bg = 'var(--surface-error-soft)'
     color = 'var(--color-negative)'
-    border = '#fecaca'
+    border = 'var(--border-error-soft)'
   }
 
   return (

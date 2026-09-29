@@ -13,12 +13,8 @@ calculations or balance reconstruction.
 
 > **Project Status:**
 > - **Backend v1.0.0:** Complete and verified (Phases 0–10).
-> - **Frontend Phase F0 (Frontend Foundation):** Complete and verified.
-> - **Frontend Phase F1 (Account Experience):** Complete and verified.
-> - **Frontend Phase F2 (Monetary Operations):** Complete and verified.
-> - **Frontend Phase F3 (Financial History):** Complete and verified.
-> - **Frontend Phase F4 (Audit Experience):** Complete and verified.
-> - **Frontend Phase F5 (Dashboard & Release Readiness):** Next phase.
+> - **Frontend Implementation (Phases F0–F5):** Complete and verified (2026-09-30).
+> - **Post-F5 Frontend Polish:** Collapsible sidebar, dark mode, public landing page, and brand navigation complete (2026-09-30).
 >
 > See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Current Status](#current-status).
 
@@ -42,7 +38,7 @@ calculations or balance reconstruction.
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-### Frontend (Phase F4 Complete — Phased Implementation In Progress)
+### Frontend (Phases F0–F5 & Post-F5 Enhancements Complete)
 
 | Phase | Description | Status | Target |
 |-------|-------------|--------|--------|
@@ -51,7 +47,8 @@ calculations or balance reconstruction.
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
 | Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
 | Phase F4 | Audit Trail & Balance Reconstruction Views | **COMPLETED** (2026-09-29) | Reconstructed Timeline & Trail |
-| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** (Next) | Final Polish & Production Readiness |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **COMPLETED** (2026-09-30) | Final Polish & Production Readiness |
+| Post-F5 | Collapsible Sidebar, Dark Mode, Public Landing Page & Brand Nav | **COMPLETED** (2026-09-30) | Workspace Polish & Architectural Showcase |
 
 ### Phase 1 — Account Module (completed)
 
@@ -360,51 +357,44 @@ Tests run: 244, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 
 ---
 
+---
+
 ## Frontend Status
 
-**Frontend Phases F0 (Foundation), F1 (Account Experience), and F2 (Monetary Operations)** are complete and verified.
+**Frontend Phases F0 through F5 and Post-F5 Product Polish** are complete, fully integrated, and verified against the frozen backend v1.0.0 REST API.
 
-The frontend is under active phased implementation; features are introduced incrementally across phases
-F1 through F5. The backend remains the sole authority for financial calculations and balance reconstruction.
+The frontend serves strictly as an accessible presentation and workflow console. The backend remains the sole authority for financial calculations, double-entry invariance, and balance reconstruction.
 
-### Implemented in Phases F0, F1 & F2
+### Implemented Frontend Capabilities
 
-- **Application Scaffold & Tooling (F0)**: Initialized with Vite, React 19, TypeScript 5.8, ESLint 9, and Vitest 3.
-- **Design System Tokens & Layout (F0)**: CSS custom properties implemented in `src/styles/tokens.css` per `DESIGN.md` §30, paired with an accessible responsive `AppShell` (`TopBar`, `Sidebar`, `PageContainer`).
-- **Routing & Navigation (F0/F1)**: React Router v7 declarative route tree (`AppRoutes`, `RootLayout`, `AccountLayout` shell) with focus management shifting keyboard focus to `<main id="main-content">` on navigation.
-- **Centralized API Client (F0)**: Native `fetch` wrapper (`apiClient`) with automatic query parameter serialization, HTTP 204 handling, `ApiError` normalization, and centralized `ENDPOINTS` registry with **zero `/api/v1` prefix**.
-- **Money Value Object (F0)**: Arbitrary-precision decimal arithmetic backed by `decimal.js` (20 decimal digits of precision, `ROUND_HALF_UP` rounding), comparison helpers, localized display formatting, and exact 2-decimal-place outbound wire serialization (`toWireString()`).
-- **Accounts Directory (F1)**: Server-paginated account browsing at `/accounts` with sorting, filtering, and URL search parameter synchronization.
-- **Account Creation (F1)**: `CreateAccountModal` invoking `POST /accounts` with non-blank client validation and duplicate account number conflict handling (HTTP 409).
-- **Account Overview & Lifecycle (F1)**: `AccountOverviewPage` displaying identity metadata, authoritative current balance from `GET /accounts/{id}/audit/balance`, and status-gated lifecycle controls (`useFreezeAccount`, `useActivateAccount`, `useCloseAccount`) with confirmation dialogs.
-- **Deposit Workflow (F2)**: Accessible `DepositModal` invoking `POST /accounts/{id}/deposit` with pre-flight monetary validation, duplicate submission protection, and authoritative balance invalidation.
-- **Withdrawal Workflow (F2)**: Accessible `WithdrawalModal` invoking `POST /accounts/{id}/withdrawal` with standard primary action styling (no destructive red) and backend 422 insufficient funds error handling.
-- **Transfer Workflow (F2)**: Accessible `TransferModal` invoking `POST /transfers` with destination selection strictly filtering out `SYS-CASH` and the source account, dual balance cache invalidation, and backend business error handling.
-- **Monetary Validation (F2)**: `validateMonetaryAmount()` utility enforcing backend `@DecimalMin("0.01")` and `@Digits(integer = 17, fraction = 2)` constraints without floating-point math.
-- **Server Authority & Cache Invalidation (F1/F2/F3)**: Zero client-side balance calculations or optimistic balance mutations; monetary operations invalidate affected authoritative balance queries (`auditKeys.balance`) and financial history.
-- **Account Transactions History (F3)**: Server-paginated view at `/accounts/:accountId/transactions` consuming `GET /accounts/{accountId}/audit/transactions` with event-derived ordering, zero fabricated amount column, and context-aware modal details.
-- **Account Ledger History (F3)**: Double-entry ledger journal at `/accounts/:accountId/ledger` consuming `GET /accounts/{accountId}/audit/ledger` with `entryType` filtering (`CREDIT`, `DEBIT`), `createdAt` sorting, and accounting-neutral typography (no red/green).
-- **Account Domain Events Stream (F3)**: Immutable domain events view at `/accounts/:accountId/events` consuming `GET /accounts/{accountId}/audit/events` with chronological sorting, zero `eventType` filtering (preserving audit timeline completeness), and accessible slide-over JSON payload inspection drawer (`SlideOver`).
-- **Centralized Multi-Entity Invalidation (F3)**: Centralized hierarchical `auditKeys` factories in `auditQueries.ts` ensuring that post-mutation cache purges invalidate transactions, ledger, and event history alongside balances (for both accounts on transfers).
-
-### What Is NOT Implemented Yet (Future Phases F4–F5)
-
-The following features belong to upcoming phases and are **not yet implemented**:
-
-- Point-in-time balance reconstruction UI and event-by-event audit trail views (`asOf`) (Phase F4)
-- Live dashboard portfolio metrics and aggregate financial statistics (Phase F5)
-
-Placeholder routes and tabs contain no business logic or data fetching.
+- **Public Architectural Landing Page (`/`)**: Dedicated public showcase outside the application shell (`LandingLayout`) highlighting double-entry invariants, event sourcing mechanics, server-authoritative balances, point-in-time reconstruction, and technology stack. Includes interactive feature summary and direct entry to `/dashboard`.
+- **Internal Application Dashboard (`/dashboard`)**: The operational portfolio home displaying **exactly three metrics** (Total Accounts, Active Accounts, Frozen Accounts) derived concurrently from `GET /accounts` using `totalElements`. Provides four Quick Action shortcuts (Create Account, Deposit, Withdrawal, Transfer) reusing server-authoritative transaction workflows.
+- **Collapsible Desktop Navigation**: Desktop sidebar supports expanded (240px) and collapsed (64px icon-only) states with tooltips, smooth motion-safe transitions, and persistence across sessions via `localStorage` (`esl_sidebar_collapsed`). Decoupled from mobile off-canvas drawer.
+- **Application-Wide Dark Mode**: Reactive `ThemeProvider` and `ThemeToggle` component supporting light and dark modes across all surfaces, backed by semantic tokens in `tokens.css`, `localStorage` persistence (`esl_theme`), and an inline anti-flash script in `index.html` preventing FOUC.
+- **Application Header Brand Navigation**: Clicking the top-left "Ledger" logo and title in `TopBar.tsx` seamlessly navigates back to `/` using semantic React Router navigation with accessible ARIA labeling.
+- **Accounts Directory & Creation (F1)**: Server-paginated account browsing at `/accounts` with sorting, status/type filtering, search parameter synchronization, and accessible `CreateAccountModal` with duplicate account number conflict handling (HTTP 409).
+- **Account Overview & Lifecycle Governance (F1)**: Contextual account hub displaying identity metadata, authoritative reconstructed balance (`GET /accounts/{id}/audit/balance`), and status-gated lifecycle actions (freeze, activate, close) with accessible confirmation dialogs.
+- **Monetary Transaction Workflows (F2)**: Accessible `DepositModal`, `WithdrawalModal` (standard primary styling), and `TransferModal` with destination filtering excluding `SYS-CASH` and the source account. Features pre-flight regex validation, multi-layer duplicate submission prevention, and dual-party cache invalidation.
+- **Exact Decimal Safety (F0/F2)**: Arbitrary-precision decimal arithmetic backed by `decimal.js` via the `Money` value object. Prohibits binary floating-point math (`Number`, `parseFloat`) across all monetary calculations. Outbound amounts are serialized as exact strings.
+- **Account Transactions History (F3)**: Server-paginated view at `/accounts/:accountId/transactions` consuming `GET /accounts/{accountId}/audit/transactions` with event-derived chronology, zero fabricated amounts, and detail modals.
+- **Account Ledger Journal (F3)**: Double-entry journal at `/accounts/:accountId/ledger` displaying discrete debit and credit legs with strict accounting-neutral typography (no red/green bias), `entryType` filtering, and `createdAt` sorting.
+- **Account Domain Events Stream (F3)**: Chronological event history at `/accounts/:accountId/events` with zero `eventType` filtering (preserving audit timeline completeness) and accessible slide-over JSON payload inspection drawer (`SlideOver`).
+- **Audit Trail & Point-in-Time Reconstruction (F4)**: Signature audit view at `/accounts/:accountId/audit` providing single-query projection of `AuditTrailResponse`, authoritative `finalBalance` card, URL-owned temporal queries (`asOf`), UTC timezone normalization, inclusive boundary notices, and server-authoritative cumulative running balances.
+- **Centralized Query-Key Invalidation**: Hierarchical `auditKeys` factories ensuring that post-mutation cache purges synchronously invalidate transactions, ledger, and event streams alongside balances (for both counterparty accounts on transfers).
 
 ### Verification Summary
 
-Frontend Phases F0, F1, F2, and F3 pass all quality gates:
+The complete frontend implementation satisfies all quality and architectural verification gates:
 
-- **Automated Tests:** `npm run test` — **146/146 passed** across 14 test files (0 failures)
-- **TypeScript Typecheck:** `npm run typecheck` (`tsc --noEmit`) and `tsc -b` — **PASS** (0 errors)
-- **Linting:** `npx eslint` across F3 files — **PASS** (0 errors, 0 warnings)
-- **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (optimized static bundle)
-- **Manual Verification:** Completed and verified in running browser (app boot, accounts directory, creation, lifecycle transitions, authoritative balance updates, deposit, withdrawal, transfer, validation rejection, 422 error display, status gating, transactions table, ledger table, events stream, and payload inspection drawer).
+- **Automated Unit & Component Tests:** `npm test` — **210/210 passed** across 24 test files (0 failures)
+- **Automated Browser E2E Tests:** `npm run test:e2e` — **7/7 passed** in Chromium across 3 test specs:
+  - `critical-journey.spec.ts` (1 test): Critical financial journey (Account A & B creation -> deposit -> transfer -> authoritative balance verification -> audit trail verification)
+  - `landing-page.spec.ts` (4 tests): Hero rendering & section discovery, CTA entry to `/dashboard`, landing page theme toggle persistence, GitHub link target verification, and TopBar brand navigation from `/dashboard` back to `/`
+  - `theme-and-sidebar.spec.ts` (2 tests): Application-wide theme toggle and persistence across reload, desktop sidebar collapse/expand toggle and persistence across reload
+- **TypeScript Typecheck:** `npm run typecheck` (`tsc -b`) — **PASS** (0 errors)
+- **ESLint Code Quality:** `npm run lint` — **PASS** (0 errors, 0 warnings across all repository files)
+- **Production Build:** `npm run build` (`tsc -b && vite build`) — **PASS** (clean, optimized static distribution bundle in `/dist`)
+- **Backend Isolation:** Backend v1.0.0 remained completely untouched (`git diff -- backend/` is 100% clean)
 
 ### Monetary Wire-Format Finding (ADR-030)
 

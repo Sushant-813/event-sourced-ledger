@@ -21,6 +21,8 @@ import { LoadingSpinner } from '@/components/feedback/LoadingSpinner'
 import { ErrorDisplay } from '@/components/feedback/ErrorDisplay'
 import { TechnicalIdBadge } from '@/components/typography/TechnicalIdBadge'
 import { useWithdrawal } from '../api/transactionMutations'
+import { useAccounts } from '@/features/accounts/api/accountQueries'
+import { AccountStatus } from '@/types/enums'
 import { useToast } from '@/hooks/useToast'
 import { validateMonetaryAmount } from '@/utils/validation'
 import { Money } from '@/utils/money'
@@ -30,7 +32,7 @@ import type { AccountResponse } from '@/features/accounts/types/account'
 export interface WithdrawalModalProps {
   isOpen: boolean
   onClose: () => void
-  account: AccountResponse
+  account?: AccountResponse | undefined
 }
 
 export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
@@ -41,11 +43,30 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   const toast = useToast()
   const { mutateAsync: withdraw, isPending } = useWithdrawal()
 
+  // In Dashboard mode (account is undefined), fetch candidate active accounts
+  const { data: accountsData, isLoading: isLoadingAccounts } = useAccounts(
+    {
+      status: AccountStatus.ACTIVE,
+      size: 100,
+    },
+    { enabled: Boolean(isOpen && !account) }
+  )
+
+  const eligibleAccounts = (accountsData?.content ?? []).filter(
+    (acc) => acc.accountNumber !== 'SYS-CASH' && acc.status === AccountStatus.ACTIVE
+  )
+
+  const [selectedAccountId, setSelectedAccountId] = useState('')
+  const [accountError, setAccountError] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [serverError, setServerError] = useState<ApiError | Error | null>(null)
 
+  const effectiveAccount = account ?? eligibleAccounts.find((acc) => String(acc.id) === selectedAccountId)
+
   const resetForm = () => {
+    setSelectedAccountId('')
+    setAccountError(null)
     setAmount('')
     setFieldError(null)
     setServerError(null)
@@ -70,15 +91,25 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
 
     setServerError(null)
 
+    let hasError = false
+    if (!effectiveAccount) {
+      setAccountError('Please select a source account')
+      hasError = true
+    }
+
     const validation = validateMonetaryAmount(amount)
     if (!validation.isValid || !validation.money) {
       setFieldError(validation.error ?? 'Please enter a valid amount')
+      hasError = true
+    }
+
+    if (hasError || !effectiveAccount || !validation.money) {
       return
     }
 
     try {
       const data = await withdraw({
-        accountId: account.id,
+        accountId: effectiveAccount.id,
         amount: validation.money.toWireString(),
       })
 
@@ -114,16 +145,56 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
           </div>
         )}
 
-        <div className="monetary-form__context-box">
-          <div className="monetary-form__context-row">
-            <span className="monetary-form__context-label">Source Account</span>
-            <span className="monetary-form__context-name font-medium">{account.accountName}</span>
+        {account ? (
+          <div className="monetary-form__context-box">
+            <div className="monetary-form__context-row">
+              <span className="monetary-form__context-label">Source Account</span>
+              <span className="monetary-form__context-name font-medium">{account.accountName}</span>
+            </div>
+            <div className="monetary-form__context-row">
+              <span className="monetary-form__context-label">Account Number</span>
+              <TechnicalIdBadge id={account.accountNumber} label="Source Account Number" />
+            </div>
           </div>
-          <div className="monetary-form__context-row">
-            <span className="monetary-form__context-label">Account Number</span>
-            <TechnicalIdBadge id={account.accountNumber} label="Source Account Number" />
+        ) : (
+          <div className="monetary-form__field">
+            <label htmlFor="withdrawal-source-account" className="monetary-form__label">
+              Source Account <span className="monetary-form__required">*</span>
+            </label>
+            {isLoadingAccounts ? (
+              <div className="monetary-form__loading-accounts text-muted">
+                <LoadingSpinner size="sm" label="Loading active accounts..." />
+                <span>Loading active accounts...</span>
+              </div>
+            ) : (
+              <select
+                id="withdrawal-source-account"
+                data-testid="withdrawal-account-select"
+                value={selectedAccountId}
+                onChange={(e) => {
+                  setSelectedAccountId(e.target.value)
+                  if (accountError) setAccountError(null)
+                }}
+                disabled={isPending}
+                className={`monetary-form__select ${accountError ? 'monetary-form__select--error' : ''}`}
+                aria-invalid={Boolean(accountError)}
+                aria-describedby={accountError ? 'withdrawal-account-error' : undefined}
+              >
+                <option value="">Select source account</option>
+                {eligibleAccounts.map((acc) => (
+                  <option key={acc.id} value={String(acc.id)}>
+                    {acc.accountNumber} — {acc.accountName}
+                  </option>
+                ))}
+              </select>
+            )}
+            {accountError && (
+              <p id="withdrawal-account-error" className="monetary-form__field-error" role="alert">
+                {accountError}
+              </p>
+            )}
           </div>
-        </div>
+        )}
 
         <div className="monetary-form__field">
           <label htmlFor="withdrawal-amount" className="monetary-form__label">
@@ -242,8 +313,39 @@ export const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
             color: var(--color-ink);
           }
 
-          .monetary-form__required {
-            color: var(--color-negative);
+          .monetary-form__select {
+            height: 44px;
+            padding: 10px 14px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-hairline);
+            background: var(--surface-card);
+            font-size: 15px;
+            color: var(--color-ink);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          .monetary-form__select:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px var(--color-primary-soft);
+          }
+
+          .monetary-form__select--error {
+            border-color: var(--color-negative) !important;
+          }
+
+          .monetary-form__select:disabled {
+            background: var(--surface-soft);
+            color: var(--color-muted);
+            cursor: not-allowed;
+          }
+
+          .monetary-form__loading-accounts {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 44px;
+            font-size: 14px;
           }
 
           .monetary-form__input-wrapper {

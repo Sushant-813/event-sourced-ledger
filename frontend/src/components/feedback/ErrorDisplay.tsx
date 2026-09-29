@@ -5,8 +5,7 @@
  * Surfaces specific backend messages (especially for 422 business-rule errors)
  * and provides a retry callback when recoverable.
  */
-import React from 'react'
-import { ApiError, isApiError } from '@/api/errors'
+import { isApiError, type ApiError } from '@/api/errors'
 
 export interface ErrorDisplayProps {
   error: ApiError | Error | unknown
@@ -84,7 +83,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
           gap: var(--space-sm);
           padding: var(--space-base);
           background: var(--surface-error-soft);
-          border: 1px solid #fecaca;
+          border: 1px solid var(--border-error-soft);
           border-radius: var(--radius-md);
           color: var(--color-ink);
         }
@@ -125,8 +124,8 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
 
         .error-display__retry-btn {
           align-self: center;
-          background: #ffffff;
-          border: 1px solid #fca5a5;
+          background: var(--surface-card);
+          border: 1px solid var(--border-error-soft);
           color: var(--color-negative);
           border-radius: var(--radius-pill);
           padding: 6px 14px;
@@ -138,7 +137,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
         }
 
         .error-display__retry-btn:hover {
-          background: #fef2f2;
+          background: var(--surface-error-soft);
         }
       `}</style>
     </div>

@@ -74,7 +74,7 @@ export const CloseConfirmDialog: React.FC<CloseConfirmDialogProps> = ({
               gap: 8px;
               padding: 10px 12px;
               background: var(--surface-error-soft);
-              border: 1px solid #fecaca;
+              border: 1px solid var(--border-error-soft);
               border-radius: var(--radius-sm);
               color: var(--color-negative);
               font-size: 13px;

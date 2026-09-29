@@ -33,7 +33,7 @@ import type { AccountResponse } from '@/features/accounts/types/account'
 export interface TransferModalProps {
   isOpen: boolean
   onClose: () => void
-  account: AccountResponse
+  account?: AccountResponse | undefined
 }
 
 export const TransferModal: React.FC<TransferModalProps> = ({
@@ -44,29 +44,42 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   const toast = useToast()
   const { mutateAsync: transfer, isPending } = useTransfer()
 
-  // Fetch candidate destination accounts (ACTIVE accounts only)
+  // Fetch candidate accounts (ACTIVE accounts only)
   const {
     data: accountsData,
     isLoading: isLoadingAccounts,
     error: accountsError,
-  } = useAccounts({
-    status: AccountStatus.ACTIVE,
-    size: 100,
-  })
+  } = useAccounts(
+    {
+      status: AccountStatus.ACTIVE,
+      size: 100,
+    },
+    { enabled: isOpen }
+  )
 
+  const [sourceAccountId, setSourceAccountId] = useState('')
   const [destinationAccountId, setDestinationAccountId] = useState('')
   const [amount, setAmount] = useState('')
   const [fieldErrors, setFieldErrors] = useState<{
+    sourceAccountId?: string
     destinationAccountId?: string
     amount?: string
   }>({})
   const [serverError, setServerError] = useState<ApiError | Error | null>(null)
 
+  // Candidate active accounts (excluding SYS-CASH)
+  const eligibleSourceAccounts = (accountsData?.content ?? []).filter(
+    (acc) => acc.accountNumber !== 'SYS-CASH' && acc.status === AccountStatus.ACTIVE
+  )
+
+  const effectiveSourceAccount =
+    account ?? eligibleSourceAccounts.find((acc) => String(acc.id) === sourceAccountId)
+
   // Filter destination candidates: exclude SYS-CASH and source account
   const eligibleDestinationAccounts = (accountsData?.content ?? []).filter(
     (acc) =>
       acc.accountNumber !== 'SYS-CASH' &&
-      acc.id !== account.id &&
+      acc.id !== effectiveSourceAccount?.id &&
       acc.status === AccountStatus.ACTIVE
   )
 
@@ -75,6 +88,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   )
 
   const resetForm = () => {
+    setSourceAccountId('')
     setDestinationAccountId('')
     setAmount('')
     setFieldErrors({})
@@ -98,6 +112,21 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     }
   }
 
+  const handleSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSourceAccountId(e.target.value)
+    if (fieldErrors.sourceAccountId) {
+      setFieldErrors((prev) => {
+        const next = { ...prev }
+        delete next.sourceAccountId
+        return next
+      })
+    }
+    // If the selected source matches the currently selected destination, clear destination
+    if (e.target.value === destinationAccountId) {
+      setDestinationAccountId('')
+    }
+  }
+
   const handleDestinationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setDestinationAccountId(e.target.value)
     if (fieldErrors.destinationAccountId) {
@@ -110,11 +139,15 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   }
 
   const validate = (): { isValid: boolean; money?: Money } => {
-    const errors: { destinationAccountId?: string; amount?: string } = {}
+    const errors: { sourceAccountId?: string; destinationAccountId?: string; amount?: string } = {}
+
+    if (!effectiveSourceAccount) {
+      errors.sourceAccountId = 'Source account is required'
+    }
 
     if (!destinationAccountId) {
       errors.destinationAccountId = 'Destination account is required'
-    } else if (String(account.id) === destinationAccountId) {
+    } else if (effectiveSourceAccount && String(effectiveSourceAccount.id) === destinationAccountId) {
       errors.destinationAccountId = 'Source and destination accounts must be different'
     }
 
@@ -125,7 +158,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
     setFieldErrors(errors)
     const isValid = Object.keys(errors).length === 0
-    if (isValid && amountValidation.money) {
+    if (isValid && amountValidation.money && effectiveSourceAccount) {
       return { isValid: true, money: amountValidation.money }
     }
     return { isValid: false }
@@ -138,11 +171,11 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     setServerError(null)
 
     const { isValid, money } = validate()
-    if (!isValid || !money) return
+    if (!isValid || !money || !effectiveSourceAccount) return
 
     try {
       const data = await transfer({
-        sourceAccountId: account.id,
+        sourceAccountId: effectiveSourceAccount.id,
         destinationAccountId: Number(destinationAccountId),
         amount: money.toWireString(),
       })
@@ -179,17 +212,67 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           </div>
         )}
 
-        {/* Source Account Context */}
-        <div className="monetary-form__context-box">
-          <div className="monetary-form__context-row">
-            <span className="monetary-form__context-label">Source Account</span>
-            <span className="monetary-form__context-name font-medium">{account.accountName}</span>
+        {/* Source Account Context (Account Overview) or Selector (Dashboard) */}
+        {account ? (
+          <div className="monetary-form__context-box">
+            <div className="monetary-form__context-row">
+              <span className="monetary-form__context-label">Source Account</span>
+              <span className="monetary-form__context-name font-medium">{account.accountName}</span>
+            </div>
+            <div className="monetary-form__context-row">
+              <span className="monetary-form__context-label">Account Number</span>
+              <TechnicalIdBadge id={account.accountNumber} label="Source Account Number" />
+            </div>
           </div>
-          <div className="monetary-form__context-row">
-            <span className="monetary-form__context-label">Account Number</span>
-            <TechnicalIdBadge id={account.accountNumber} label="Source Account Number" />
+        ) : (
+          <div className="monetary-form__field">
+            <label htmlFor="transfer-source" className="monetary-form__label">
+              Source Account <span className="monetary-form__required">*</span>
+            </label>
+            {isLoadingAccounts ? (
+              <div className="monetary-form__loading-accounts text-muted">
+                <LoadingSpinner size="sm" label="Loading eligible accounts..." />
+                <span>Loading eligible accounts...</span>
+              </div>
+            ) : accountsError ? (
+              <p className="monetary-form__field-error" role="alert">
+                Failed to load accounts. Please try reopening the modal.
+              </p>
+            ) : (
+              <select
+                id="transfer-source"
+                data-testid="transfer-source-select"
+                value={sourceAccountId}
+                onChange={handleSourceChange}
+                disabled={isPending}
+                className={`monetary-form__select ${
+                  fieldErrors.sourceAccountId ? 'monetary-form__select--error' : ''
+                }`}
+                aria-invalid={Boolean(fieldErrors.sourceAccountId)}
+                aria-describedby={
+                  fieldErrors.sourceAccountId ? 'transfer-source-error' : undefined
+                }
+              >
+                <option value="">Select source account...</option>
+                {eligibleSourceAccounts.map((src) => (
+                  <option key={src.id} value={src.id}>
+                    {src.accountNumber} — {src.accountName}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {fieldErrors.sourceAccountId && (
+              <p
+                id="transfer-source-error"
+                className="monetary-form__field-error"
+                role="alert"
+              >
+                {fieldErrors.sourceAccountId}
+              </p>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Destination Account Selector */}
         <div className="monetary-form__field">
@@ -209,6 +292,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           ) : (
             <select
               id="transfer-destination"
+              data-testid="transfer-destination-select"
               value={destinationAccountId}
               onChange={handleDestinationChange}
               disabled={isPending}
@@ -283,12 +367,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({
         </div>
 
         {/* Review Summary (shown when destination is selected) */}
-        {selectedDestinationAccount && (
+        {selectedDestinationAccount && effectiveSourceAccount && (
           <div className="monetary-form__review-box">
             <span className="monetary-form__review-title">Transfer Summary</span>
             <div className="monetary-form__review-row">
               <span className="text-muted">From:</span>
-              <span className="font-mono">{account.accountNumber}</span>
+              <span className="font-mono">{effectiveSourceAccount.accountNumber}</span>
             </div>
             <div className="monetary-form__review-row">
               <span className="text-muted">To:</span>

@@ -68,7 +68,8 @@ Frontend v1.0 is **account-centric**: every meaningful view is either the accoun
 
 In scope for v1.0:
 
-- Dashboard (account-derived metrics and quick actions only)
+- Public product landing page (`/`) providing architectural overview and technical positioning
+- Internal application dashboard (`/dashboard`) with portfolio metrics and quick actions
 - Account list, creation, and lookup
 - Account overview (detail page)
 - Account lifecycle actions (freeze, activate, close)
@@ -78,6 +79,9 @@ In scope for v1.0:
 - Account-scoped event history
 - Account-scoped audit trail (event-by-event balance explanation)
 - Current and historical (`asOf`) balance reconstruction, where the backend supports it
+- Collapsible desktop navigation sidebar (240px expanded / 64px collapsed with persistence)
+- User-controlled light/dark theme toggle with persistent preferences
+- Direct navigation between internal application header brand and public landing page
 - Pagination, filtering, and sorting exactly where the backend contract supports them
 - Loading, empty, and error states for every data-driven view
 - Success feedback for every mutating action
@@ -88,15 +92,21 @@ Explicitly **not** in scope for v1.0: anything requiring a backend capability th
 
 ---
 
-## 5. Dashboard
+## 5. Dashboard & Application Entry
 
-### 5.1 Purpose
+### 5.1 Routing & Separation of Concerns
 
-The dashboard is an account-portfolio landing page. It is deliberately limited to what `GET /accounts` can support, consistent with `DESIGN.md` §22.
+- **Public Landing Page (`/`):** Dedicated public entry point presenting the system architecture, core double-entry capabilities, event-sourcing principles, and technology stack. Rendered in a dedicated public layout without the internal application sidebar.
+- **Internal Application Dashboard (`/dashboard`):** The internal account-portfolio home, rendered inside the application shell (`AppShell`) with sidebar navigation.
+- **Brand Home Link:** Clicking the "Ledger" brand/logo in the internal application header navigates back to `/`.
 
-### 5.2 Supported Metrics
+### 5.2 Purpose
 
-The dashboard may display account counts derived from `GET /accounts` pagination metadata (`totalElements`), using the `status` filter:
+The dashboard is the internal account-portfolio landing page. It is deliberately limited to what `GET /accounts` can support, consistent with `DESIGN.md` §22.
+
+### 5.3 Supported Metrics
+
+The dashboard displays account counts derived from `GET /accounts` pagination metadata (`totalElements`), using the `status` filter:
 
 - **Total Accounts** — `totalElements` from an unfiltered query (excluding `SYS-CASH`, which the backend already excludes automatically).
 - **Active Accounts** — `totalElements` with `status=ACTIVE`.
@@ -104,13 +114,14 @@ The dashboard may display account counts derived from `GET /accounts` pagination
 
 These three metrics match `DESIGN.md` §22's dashboard wireframe exactly; no additional metric card may be introduced.
 
-### 5.3 Supported Quick Actions
+### 5.4 Supported Quick Actions
 
-- **Create Account** — navigates to / opens account creation.
-- **Find Account by Number** — navigates to / opens account lookup by business account number (`GET /accounts/by-number/{accountNumber}`).
-- **Initiate Transfer** — opens the transfer workflow (Section 9).
+- **Create Account** — triggers account creation workflow modal (`POST /accounts`).
+- **Deposit** — opens deposit modal with active account selection (`POST /accounts/{id}/deposit`).
+- **Withdrawal** — opens withdrawal modal with active account selection (`POST /accounts/{id}/withdrawal`).
+- **Transfer** — opens transfer workflow modal (`POST /transfers`).
 
-### 5.4 Explicit Exclusions
+### 5.5 Explicit Exclusions
 
 The dashboard must **not** display:
 

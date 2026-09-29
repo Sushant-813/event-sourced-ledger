@@ -13,8 +13,6 @@ export interface ToastViewportProps {
 }
 
 export const ToastViewport: React.FC<ToastViewportProps> = ({ toasts, onDismiss }) => {
-  if (toasts.length === 0) return null
-
   return (
     <div
       className="toast-viewport"

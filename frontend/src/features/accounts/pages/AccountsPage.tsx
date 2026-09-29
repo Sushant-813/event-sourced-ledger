@@ -14,7 +14,7 @@ import { AccountSortControl } from '../components/AccountSortControl'
 import { CreateAccountModal } from '../components/CreateAccountModal'
 import { TablePagination } from '@/components/data-display/TablePagination'
 import { ErrorDisplay } from '@/components/feedback/ErrorDisplay'
-import { AccountStatus, AccountType } from '@/types/enums'
+import type { AccountStatus, AccountType } from '@/types/enums'
 import type { SortDirection } from '@/types/common'
 
 export const AccountsPage: React.FC = () => {

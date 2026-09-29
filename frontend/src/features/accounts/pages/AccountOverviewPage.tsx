@@ -614,11 +614,11 @@ export const AccountOverviewPage: React.FC = () => {
         .account-overview__btn--warning {
           background: var(--surface-warning-soft);
           color: var(--color-warning);
-          border: 1px solid #fde68a;
+          border: 1px solid var(--border-warning-soft);
         }
 
         .account-overview__btn--warning:hover:not(:disabled) {
-          background: #fef3c7;
+          filter: brightness(0.95);
         }
 
         .account-overview__btn--destructive {
@@ -627,7 +627,7 @@ export const AccountOverviewPage: React.FC = () => {
         }
 
         .account-overview__btn--destructive:hover:not(:disabled) {
-          background: #b91c1c;
+          filter: brightness(0.9);
         }
 
         .account-overview__notice-banner {
@@ -648,7 +648,7 @@ export const AccountOverviewPage: React.FC = () => {
 
         .account-overview__notice-banner--warning {
           background: var(--surface-warning-soft);
-          border: 1px solid #fde68a;
+          border: 1px solid var(--border-warning-soft);
           color: var(--color-warning);
         }
 

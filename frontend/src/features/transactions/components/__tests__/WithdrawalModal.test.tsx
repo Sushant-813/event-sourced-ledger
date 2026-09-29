@@ -51,7 +51,7 @@ const mockAccount: AccountResponse = {
 function renderWithdrawalModal(props?: {
   isOpen?: boolean
   onClose?: () => void
-  account?: AccountResponse
+  account?: AccountResponse | null
   queryClient?: QueryClient
 }) {
   const qc =
@@ -64,13 +64,14 @@ function renderWithdrawalModal(props?: {
     })
 
   const onClose = props?.onClose ?? vi.fn()
+  const accountProp = props?.account === null ? undefined : (props?.account ?? mockAccount)
 
   const utils = render(
     <QueryClientProvider client={qc}>
       <WithdrawalModal
         isOpen={props?.isOpen ?? true}
         onClose={onClose}
-        account={props?.account ?? mockAccount}
+        account={accountProp}
       />
     </QueryClientProvider>
   )
@@ -254,6 +255,66 @@ describe('WithdrawalModal', () => {
         accountId: 20,
         amount: 100.0,
         createdAt: '2026-09-27T13:00:00Z',
+      })
+    })
+  })
+
+  describe('Contextual vs Standalone modes', () => {
+    it('contextual mode: renders fixed source account context badge and no dropdown', () => {
+      renderWithdrawalModal({ account: mockAccount })
+      expect(screen.getByText('Source Account')).toBeInTheDocument()
+      expect(screen.getByText('Bob Checking')).toBeInTheDocument()
+      expect(screen.queryByTestId('withdrawal-account-select')).not.toBeInTheDocument()
+    })
+
+    it('standalone/dashboard mode: renders account selector and withdraws from selected account', async () => {
+      const user = userEvent.setup()
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        content: [
+          mockAccount,
+          { id: 10, accountNumber: 'ACC-1001', accountName: 'Alice Savings', status: AccountStatus.ACTIVE },
+        ],
+        page: 0,
+        size: 100,
+        totalPages: 1,
+        totalElements: 2,
+      })
+
+      renderWithdrawalModal({ account: null })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('withdrawal-account-select')).toBeInTheDocument()
+      })
+
+      // Validation error if no account selected
+      await user.click(screen.getByTestId('withdrawal-submit-button'))
+      expect(screen.getByText('Please select a source account')).toBeInTheDocument()
+
+      // Select account and submit withdrawal
+      await user.selectOptions(screen.getByTestId('withdrawal-account-select'), '10')
+      const input = screen.getByLabelText(/Withdrawal Amount/i)
+      fireEvent.change(input, { target: { value: '150.00' } })
+
+      vi.mocked(apiClient).mockResolvedValueOnce({
+        transactionId: 888,
+        referenceNumber: 'ref-standalone-withdraw',
+        transactionType: TransactionType.WITHDRAWAL,
+        status: TransactionStatus.COMPLETED,
+        accountId: 10,
+        amount: '150.00',
+        createdAt: '2026-09-30T10:00:00Z',
+      })
+
+      await user.click(screen.getByTestId('withdrawal-submit-button'))
+
+      await waitFor(() => {
+        expect(apiClient).toHaveBeenCalledWith('/accounts/10/withdrawal', expect.objectContaining({
+          method: 'POST',
+        }))
+        expect(mockToastSuccess).toHaveBeenCalledWith(
+          'Withdrawal Successful',
+          expect.stringContaining('ref-standalone-withdraw')
+        )
       })
     })
   })

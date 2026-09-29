@@ -104,6 +104,7 @@ src/
 │   ├── navigation/             # NavLink, Breadcrumbs, TabNav
 │   ├── overlay/                # ModalDialog, ConfirmDialog, SlideOver
 │   ├── table/                  # DataTable, TablePagination, TableHeader
+│   ├── theme/                  # ThemeToggle (light/dark switch)
 │   └── typography/             # Badges (Status, Technical ID), CodeSnippet
 ├── features/                   # Domain feature modules (self-contained vertical slices)
 │   ├── accounts/               # Account directory, creation, lifecycle (freeze/close)
@@ -120,16 +121,24 @@ src/
 │   │   ├── api/                # Dashboard account queries (3x GET /accounts)
 │   │   ├── components/         # MetricCard, SystemHealthCard, QuickActions
 │   │   └── pages/              # DashboardPage
+│   ├── landing/                # Public product landing page
+│   │   ├── components/         # Hero, Capabilities, Architecture, TechStack, Preview, Footer
+│   │   ├── pages/              # LandingPage
+│   │   └── styles/             # Public landing page styling
+│   ├── theme/                  # Application-wide theme state & context
+│   │   ├── ThemeContext.tsx    # Theme context definition and provider
+│   │   └── useTheme.ts         # Hook for theme consumption
 │   └── transactions/           # Monetary operations (Deposit, Withdrawal, Transfer modals/workflows)
 │       ├── api/                # Transaction and transfer mutations
 │       ├── components/         # DepositModal, WithdrawalModal, TransferModal
 │       └── types/              # Transaction and transfer DTO interfaces
 ├── routes/                     # Application routing definitions and layout shells
 │   ├── AppRoutes.tsx           # React Router declarative route tree
-│   ├── RootLayout.tsx          # Root shell providing AppShell, Navigation, Toaster
+│   ├── LandingLayout.tsx       # Dedicated public layout shell (header, main, footer, no sidebar)
+│   ├── RootLayout.tsx          # Internal application shell providing AppShell, Sidebar, Toaster
 │   └── AccountLayout.tsx       # Account context shell (header, metadata, tabs)
 ├── styles/                     # Global styles and design system CSS variables
-│   ├── tokens.css              # Color tokens, elevation, radii from DESIGN.md §30
+│   ├── tokens.css              # Light and dark color tokens, elevation, radii from DESIGN.md §30
 │   ├── typography.css          # Inter / JetBrains Mono font declarations
 │   ├── reset.css               # Modern CSS reset and accessibility focus defaults
 │   └── main.css                # Global root assembly
@@ -144,10 +153,11 @@ src/
 
 ### 2.1 File Placement & Responsibility Rules
 
-1. **Features are Independent**: A feature folder (e.g. `features/audit`) contains everything specific to that domain: query hooks, components, pages, and types.
-2. **Shared Code Lives in Root Folders**: If a component or utility is used across two or more unrelated features (e.g. `StatusBadge`, `Money` utility, `ApiClient`), it belongs in `components/` or `utils/`.
+1. **Features are Independent**: A feature folder (e.g. `features/audit`, `features/landing`) contains everything specific to that domain: query hooks, components, pages, and types.
+2. **Shared Code Lives in Root Folders**: If a component or utility is used across two or more unrelated features (e.g. `StatusBadge`, `Money` utility, `ApiClient`, `ThemeToggle`), it belongs in `components/` or `utils/`.
 3. **No Direct Feature-to-Feature Cross Imports**: A component in `features/transactions` must not directly import internal components from `features/audit`. Shared data flows through common types or custom hooks in `features/accounts/api`.
 4. **Operations are Workflows, Not Global Pages**: The backend provides no global transaction or transfer listing endpoints. Monetary operations (`Deposit`, `Withdrawal`, `Transfer`) are implemented as modals or workflow overlays launched from the Dashboard (Quick Actions) or Account surfaces, not as separate global routing pages.
+5. **Public vs. Internal Shell Separation**: Public presentation views (`features/landing`) live outside the internal application shell (`AppShell`) and use `LandingLayout`. Internal operations live within `RootLayout` (`AppShell`).
 
 ---
 
@@ -158,8 +168,8 @@ Routing is implemented via **React Router** using a declarative data router. Thi
 ### 3.1 Route Hierarchy & Concrete URL Structure
 
 ```
-/                                   -> DashboardPage (redirects or renders dashboard)
-/dashboard                          -> DashboardPage
+/                                   -> LandingPage (dedicated public layout, no sidebar)
+/dashboard                          -> DashboardPage (internal application home inside AppShell)
 /accounts                           -> AccountsPage (portfolio directory, filterable)
 /accounts/new                       -> CreateAccountPage (or triggers creation modal)
 /accounts/:accountId                -> AccountLayout (loads account context)
@@ -176,6 +186,7 @@ Routing is implemented via **React Router** using a declarative data router. Thi
 
 | Route Path | View Component | Query Parameters Supported | Parent Layout | Error Boundary |
 | :--- | :--- | :--- | :--- | :--- |
+| `/` | `LandingPage` | None | `LandingLayout` | Root Error Page |
 | `/dashboard` | `DashboardPage` | None | `RootLayout` | Root Error Page |
 | `/accounts` | `AccountsPage` | `page`, `size`, `status`, `accountType`, `sort` | `RootLayout` | Table Error Boundary |
 | `/accounts/:accountId` | Redirect to `/accounts/:accountId/overview` | None | `RootLayout` | Account Error Boundary |
@@ -191,13 +202,14 @@ Routing is implemented via **React Router** using a declarative data router. Thi
 - **Account IDs are Immutable Longs**: The `:accountId` parameter in URL routes is the backend database primary key (e.g. `/accounts/102`). Account numbers (e.g. `ACC-1001`) are business identifiers displayed in the UI badge, but routing uses `:accountId` to directly align with backend REST paths (`/accounts/{id}`).
 - **Deep-Link State Preservation**: All table pagination, active filters, and `asOf` historical query parameters are serialized to the URL search string (e.g., `/accounts/102/audit?page=0&size=20&asOf=2026-09-20T12:00:00Z`). Navigating via deep-link or browser refresh directly hydrates the identical view and historical query state.
 - **Account-Not-Found Handling**: If `:accountId` does not exist or refers to `SYS-CASH`, the backend returns HTTP 404. The `AccountLayout` error boundary catches this and renders a dedicated `AccountNotFoundView` with options to return to the Accounts Directory.
+- **TopBar Brand Navigation**: The top-left "Ledger" logo and title in `TopBar.tsx` renders a semantic `<Link to="/">` with an accessible label (`aria-label="Event-Sourced Ledger Home"`), navigating from any internal page back to the public architectural showcase.
 - **Transfer Workflow Boundary**: Transfers between accounts are executed via a modal dialog accessible from the Dashboard Quick Actions or Account Overview. The modal captures source, destination, and amount, dispatches `POST /transfers`, and invalidates affected account caches without requiring an isolated top-level route.
 
 ---
 
 ## 4. State Architecture
 
-State is strictly partitioned into three distinct classifications to prevent state synchronization bugs and eliminate unnecessary global stores:
+State is strictly partitioned into distinct classifications to prevent state synchronization bugs and eliminate unnecessary global stores:
 
 ```mermaid
 graph TD
@@ -216,6 +228,11 @@ graph TD
         asOf[asOf: ISO-8601 string]
     end
 
+    subgraph Persistent_Client_State [Persistent Client Preferences: localStorage]
+        thm["Theme: light | dark (esl_theme)"]
+        sbar["Sidebar: expanded | collapsed (esl_sidebar_collapsed)"]
+    end
+
     subgraph Local_UI_State [Local UI State: React Hooks]
         mod[Modal Visibility: Deposit, Transfer, Freeze]
         form[Form Inputs & Pre-flight Validation State]
@@ -226,6 +243,7 @@ graph TD
     URL_State -->|Query Keys| Server_State
     Server_State -->|Render Data| UI_View[React UI View]
     Local_UI_State -->|Control| UI_View
+    Persistent_Client_State -->|Layout & Tokens| UI_View
 ```
 
 ### 4.1 State Categorization & Technologies
@@ -244,13 +262,17 @@ graph TD
 2. **URL Search Parameter State (`useSearchParams`)**:
    - Owns query parameters that affect data presentation: pagination (`page`, `size`), filters (`status`, `accountType`, `entryType`), sorting (`sort`), and historical temporal bounds (`asOf`).
    - Ensures back/forward browser navigation works correctly and views are bookmarkable.
-3. **Local Component & Form State (`useState`, `useReducer`, controlled inputs)**:
+3. **Persistent Client Preferences (`localStorage`)**:
+   - Owns client-side user experience settings that persist across sessions:
+     - Active theme (`esl_theme`: `'light' | 'dark'`), initialized synchronously in `index.html` head to prevent FOUC.
+     - Desktop sidebar collapsed state (`esl_sidebar_collapsed`: `'true' | 'false'`).
+4. **Local Component & Form State (`useState`, `useReducer`, controlled inputs)**:
    - Owns purely transient, ephemeral UI concerns:
      - Modal visibility (`isDepositModalOpen`, `isTransferModalOpen`, `isFreezeConfirmOpen`).
      - Form draft inputs prior to submission.
      - Collapsed/expanded state of JSON payload inspection drawers.
      - Toast notifications stack.
-4. **Rejection of Global Stores (Zustand / Redux)**:
+5. **Rejection of Global Stores (Zustand / Redux)**:
    - A global store like Redux or Zustand is **explicitly rejected**.
    - **Rationale**: 100% of the domain data in this ledger application is server-authoritative state. Managing server data in Redux causes cache desynchronization, duplicate loading logic, and boilerplate actions. UI state in this application is local to specific layouts or components and does not require global cross-slice pub/sub.
 
@@ -893,8 +915,9 @@ graph TD
 ### 17.1 Responsive Adaptation Strategies
 
 1. **Application Shell**:
-   - Desktop (>=1024px): Persistent 240px left sidebar with fixed top bar.
-   - Mobile/Tablet (<1024px): Sidebar collapses into an off-canvas slide-out drawer triggered by a top-bar hamburger button.
+   - Desktop (>=1024px): Collapsible left sidebar supporting expanded (240px) and collapsed (64px) states with fixed top bar. Collapsed mode centers icons and renders accessible tooltips on hover/focus. State is stored in `localStorage` (`esl_sidebar_collapsed`) and persists across reloads.
+   - Mobile/Tablet (<1024px): Sidebar collapses into an off-canvas slide-out drawer triggered by a top-bar hamburger button, keeping desktop collapse behavior completely decoupled from mobile drawer behavior.
+   - Smooth CSS transitions respect `prefers-reduced-motion: reduce`.
 2. **Data Tables**:
    - Tables feature `overflow-x: auto` wrappers with smooth touch scrolling and sticky left identifier columns to preserve context on narrow screens.
 3. **Max-Width Centering**:
@@ -925,7 +948,7 @@ Frontend v1.0.0 operates in an internal enterprise environment with **no user au
 The testing strategy validates system reliability across four distinct tiers:
 
 ```
-[Playwright E2E Tests]       -> Full browser integration across critical financial flows
+[Playwright E2E Tests]       -> Full browser integration across critical financial flows & landing page
 [React Testing Library]      -> Component interaction, modal accessibility, keyboard traps
 [Integration Tests (MSW)]    -> Query hooks, cache invalidation, API client error mapping
 [Unit Tests (Vitest)]        -> Money arbitrary precision, date formatters, validation regex
@@ -938,7 +961,7 @@ The testing strategy validates system reliability across four distinct tiers:
 | **Unit Testing** | Vitest | Validate pure domain logic: `Money` decimal arithmetic, formatting, date normalization, regex validators. | Fast execution, runs locally and in CI. |
 | **Component Testing** | React Testing Library + Vitest | Verify component rendering, accessibility attributes (`aria-*`), user interactions, and visual states. | Verifies UI components and user events. |
 | **API Integration** | Mock Service Worker (MSW) | Intercept network requests at the fetch boundary to simulate backend 200, 400, 404, 409, and 500 responses without a live server. | Verifies query hooks and error normalizer. |
-| **End-to-End (E2E)** | Playwright | Validate critical full-stack user journeys in a real browser against a running backend instance. | Validates complete financial workflows. |
+| **End-to-End (E2E)** | Playwright (`@playwright/test`) | Validate critical full-stack user journeys and landing page flows in a real browser against a running backend instance. | Validates complete financial workflows and navigation. |
 
 ### 19.2 Critical E2E Test Scenarios
 
@@ -946,6 +969,7 @@ The testing strategy validates system reliability across four distinct tiers:
 2. **Deposit & Reconstructed Balance Flow**: Open active account -> Record initial balance -> Submit deposit -> Confirm modal closes -> Verify authoritative balance updates -> Navigate to Audit Trail and verify matching `DEPOSIT` event and `runningBalance`.
 3. **Double-Entry Transfer Flow**: Execute transfer from Account A to Account B -> Verify debit on Account A ledger -> Verify credit on Account B ledger.
 4. **Historical Balance Time-Travel (`asOf`)**: Submit deposit -> Record timestamp $T_1$ -> Submit second deposit at $T_2$ -> Apply $T_1$ in `asOf` picker -> Verify reconstructed balance matches $T_1$ state.
+5. **Public Landing Page & Navigation Journey**: Navigate to `/` -> Verify headline, capabilities grid, architecture ASCII diagrams, and tech stack -> Verify theme toggle and preference persistence across reload -> Click "Open Console" to navigate to `/dashboard` -> Click TopBar "Ledger" logo and verify seamless navigation back to `/`.
 
 ---
 

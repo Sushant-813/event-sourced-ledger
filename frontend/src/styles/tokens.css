@@ -30,6 +30,7 @@
   --surface-soft: #f7f8fa;
   --surface-card: #ffffff;
   --surface-strong: #eef0f3;
+  --surface-strong-hover: #e2e5e9;
   --surface-dark: #0a0b0d;
   --surface-dark-elevated: #16181c;
   --surface-success-soft: #ecfdf5;
@@ -42,6 +43,10 @@
    * ------------------------------------------------------------------ */
   --border-hairline: #dee1e6;
   --border-hairline-soft: #eef0f3;
+  --border-success-soft: #a7f3d0;
+  --border-warning-soft: #fde68a;
+  --border-error-soft: #fecaca;
+  --border-info-soft: #bfdbfe;
 
   /* ------------------------------------------------------------------
    * Semantic States
@@ -79,6 +84,7 @@
    * Elevation
    * ------------------------------------------------------------------ */
   --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
 
   /* ------------------------------------------------------------------
    * Typography
@@ -91,6 +97,61 @@
    * Layout — derived from DESIGN.md §6 / FRONTEND_ARCHITECTURE.md §17
    * ------------------------------------------------------------------ */
   --layout-sidebar-width: 240px;
+  --layout-sidebar-collapsed-width: 64px;
   --layout-topbar-height: 60px;
   --layout-content-max-width: 1200px;
+}
+
+/* ------------------------------------------------------------------
+ * Dark Mode Theme Tokens
+ *
+ * Activated via [data-theme="dark"] on <html>.
+ * Curated deep navy/slate palette preserving all WCAG AA contrast ratios
+ * and institutional ledger clarity without decorative neon gradients.
+ * ------------------------------------------------------------------ */
+[data-theme="dark"] {
+  /* Brand & Action */
+  --color-primary: #3b82f6;          /* brighter blue for high contrast on dark surfaces */
+  --color-primary-active: #60a5fa;
+  --color-primary-disabled: #475569;
+  --color-primary-soft: rgba(59, 130, 246, 0.18);
+
+  /* Text (All WCAG AA Compliant against dark backgrounds) */
+  --color-ink: #f8fafc;              /* >15:1 contrast on surface-canvas */
+  --color-body: #cbd5e1;             /* >8:1 contrast on surface-canvas */
+  --color-body-strong: #ffffff;
+  --color-muted: #94a3b8;            /* >5.5:1 contrast (exceeds WCAG AA 4.5:1) */
+  --color-muted-soft: #64748b;
+
+  /* Surfaces */
+  --surface-canvas: #0b0f19;         /* dark baseline (topbar, sidebar, modal background) */
+  --surface-soft: #111827;           /* main page backdrop / secondary areas */
+  --surface-card: #182234;           /* cards, data tables, modals */
+  --surface-strong: #1f2d42;         /* subtle emphasis containers */
+  --surface-strong-hover: #293a54;   /* subtle emphasis hover */
+  --surface-dark: #06090e;
+  --surface-dark-elevated: #0f172a;
+  --surface-success-soft: rgba(16, 185, 129, 0.16);
+  --surface-error-soft: rgba(239, 68, 68, 0.16);
+  --surface-warning-soft: rgba(245, 158, 11, 0.16);
+  --surface-info-soft: rgba(59, 130, 246, 0.16);
+
+  /* Borders */
+  --border-hairline: #293548;
+  --border-hairline-soft: #1f2d42;
+  --border-success-soft: rgba(16, 185, 129, 0.35);
+  --border-warning-soft: rgba(245, 158, 11, 0.35);
+  --border-error-soft: rgba(239, 68, 68, 0.35);
+  --border-info-soft: rgba(59, 130, 246, 0.35);
+
+  /* Semantic States */
+  --color-positive-text: #34d399;    /* emerald-400 (>6:1 contrast) */
+  --color-positive: #10b981;
+  --color-negative: #f87171;         /* red-400 (>6:1 contrast) */
+  --color-warning: #fbbf24;          /* amber-400 (>7:1 contrast) */
+  --color-info: #60a5fa;
+
+  /* Elevation */
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
