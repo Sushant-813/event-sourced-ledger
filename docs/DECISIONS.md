@@ -2424,6 +2424,95 @@ Negative
 
 ---
 
+# ADR-037
+
+## Title
+
+Production Cloud Deployment Topology: Render (Managed PostgreSQL & Dockerized Spring Boot) + Vercel (React SPA)
+
+### Status
+
+Accepted
+
+### Context
+
+Following the completion of the full-stack implementation and the creation of the `v1.1.0` pre-deployment source checkpoint, the Event-Sourced Ledger requires a cloud deployment architecture to host and expose the system to public users.
+
+The architectural constraints and invariant requirements include:
+1. **Financial Authority:** The Spring Boot backend must remain the sole authoritative source of truth for financial balances, double-entry invariants, and audit trails.
+2. **Zero Client Balance Derivation:** The React frontend is strictly a presentation and command-dispatch layer; it must perform zero financial calculations or balance reconstruction.
+3. **Database Integrity:** Relational persistence must support ACID transactions, row-level pessimistic locking (`findByIdForUpdate`), Flyway database migrations (`V1` through `V5`), and strict Hibernate schema validation (`ddl-auto=validate`).
+4. **Independent Scalability & Edge Delivery:** The frontend static assets should be delivered with low latency via global edge CDN networks, while the backend runs as an independently scalable containerized runtime.
+5. **Operational Simplicity:** Avoid premature operational overhead (such as Kubernetes orchestration or complex multi-cloud VPC peering) while establishing a production-grade, reproducible containerized workflow.
+
+### Decision
+
+Adopt a two-tier cloud hosting architecture paired with a managed relational database:
+
+1. **Database Layer (Render Managed PostgreSQL):**
+   - Host the production database on Render PostgreSQL.
+   - Connected via secure JDBC connection string (`LEDGER_DB_URL`) with SSL enforcement (`?sslmode=require`).
+   - Managed credentials injected via environment variables (`LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`).
+   - Flyway executes schema migrations automatically upon application startup.
+   - Hibernate schema validation (`ddl-auto=validate`) verifies mapping compatibility.
+
+2. **Backend Application Layer (Render Web Service with Docker):**
+   - Package the Spring Boot backend as a multi-stage Docker container (`eclipse-temurin:21-jdk-jammy` builder and `eclipse-temurin:21-jre-jammy` runtime).
+   - Deploy as a managed Web Service on Render, connected directly to the GitHub repository.
+   - Support Render's dynamic port assignment via `server.port=${PORT:8080}`.
+   - Enforce environment-specific CORS policies via a dedicated Spring WebMvc configuration.
+
+3. **Frontend Presentation Layer (Vercel Edge Network):**
+   - Deploy the compiled React + TypeScript + Vite static bundle to Vercel.
+   - Configure `VITE_API_BASE_URL` to route API requests directly over HTTPS to the Render backend service.
+   - Configure SPA routing rewrites via `vercel.json` directing non-asset routes to `/index.html` to support client-side deep linking.
+
+4. **Architectural Separation:**
+```text
+   Users
+      ↓
+   Vercel
+   React / TypeScript / Vite
+      ↓ HTTPS REST
+   Render
+   Dockerized Spring Boot Backend
+      ↓ JDBC
+   Render PostgreSQL
+```
+
+### Alternatives Considered
+
+- **Monolithic Single-Container Hosting (Serving Vite build from Spring Boot `/static`):**  
+  *Rejected:* Tightly couples frontend static asset distribution with backend application rebuilds and JVM restarts. Prevents independent frontend preview deployments and global edge CDN caching.
+
+- **Full Cloud Orchestration (Kubernetes / AWS ECS with Terraform):**  
+  *Rejected:* Introduces disproportionate operational complexity, control-plane costs, and maintenance burden for a single-tenant portfolio core ledger.
+
+- **Serverless Backend (AWS Lambda / Google Cloud Run):**  
+  *Rejected:* Cold-start latency harms transactional responsiveness, and persistent connection pool sizing against transactional relational databases is suboptimal without dedicated RDS Proxy infrastructure.
+
+### Rationale
+
+Separating static edge delivery (Vercel) from containerized JVM transaction processing (Render) aligns with modern web standards while strictly maintaining the core architectural principle: the backend is the authoritative financial core, and the frontend is a zero-calculation client interface.
+
+### Consequences
+
+Positive
+
+- Low-latency edge distribution and instant global caching for the React frontend via Vercel.
+- Reproducible, isolated runtime environment via multi-stage Docker containerization on Java 21.
+- Fully managed, automated PostgreSQL backups and SSL connection encryption on Render.
+- Independent deployment lifecycles for frontend and backend.
+- Clear secret boundaries: database credentials never enter the frontend bundle or client runtime.
+
+Negative
+
+- Cross-origin communication requires explicit CORS configuration and preflight handling in Spring Boot.
+- Free/starter tiers on Render may introduce sleep/cold-start latency on initial backend wakeups.
+- Requires managing configuration across two separate provider dashboards (Render and Vercel).
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.
@@ -2436,10 +2525,9 @@ Future ADRs may include:
 - Multi-Currency Support
 - CQRS
 - Kafka Integration
-- Docker Strategy
+- Docker Multi-Container Orchestration
 - Testing Strategy
-- Deployment Strategy
-- Monitoring & Metrics
+- Monitoring & Distributed Tracing (OpenTelemetry)
 
 ---
 

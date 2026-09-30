@@ -17,7 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** READY FOR EXECUTION (Upcoming)  
+- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phase D0 COMPLETED (2026-09-30)  
+- **Next Phase (Phase D1):** Production PostgreSQL on Render (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -689,7 +690,7 @@ Final production release/tag
 
 ## Phase D0 — Deployment Planning & Readiness
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED — 2026-09-30**
 
 ### Objective
 Conduct a comprehensive repository and configuration audit to ensure full production readiness across backend, frontend, environment boundaries, and container definitions without initiating cloud deployment.
@@ -705,16 +706,21 @@ Conduct a comprehensive repository and configuration audit to ensure full produc
 - **Gap Identification:** Document all required configuration adjustments prior to cloud provisioning.
 - **Execution Constraint:** Zero cloud resources provisioned and zero live deployment steps initiated in Phase D0.
 
-### Verification Gates
-- Audit report completed documenting all environment variable contracts and build requirements.
-- Secret boundaries and CORS policies verified and approved.
-- Zero premature deployment actions or external resources provisioned.
+### Verification Gates Passed
+- **Repository Integrity:** Clean working tree on `main` branch aligned with `origin/main`; tag `v1.1.0` verified at commit `ef3f96a` as the pre-deployment source checkpoint; zero premature deployment files in repo.
+- **Backend Audit:** Confirmed Spring Boot 3.5.16 on Java 21; verified `ddl-auto=validate`, Flyway V1–V5 enabled, and parameterized DB credentials (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`); identified hardcoded port gap requiring `server.port=${PORT:8080}` for Render dynamic port binding.
+- **Frontend Audit:** Confirmed React 19 + TypeScript 5.8 + Vite 6.4.3; verified `VITE_API_BASE_URL` as production API client mechanism; verified Vite proxy is dev-only; identified SPA client routing rewrite requirement (`vercel.json`).
+- **Secret & Boundary Audit:** Verified database credentials are strictly isolated to backend runtime; verified zero secret leakage in repository or frontend bundle; confirmed `VITE_API_BASE_URL` is public/client-facing.
+- **CORS Audit:** Confirmed backend currently has zero CORS configuration (which worked locally due to Vite dev proxy); identified requirement for centralized `CorsConfig` supporting `cors.allowed-origins` prior to production cross-origin integration.
+- **Docker Audit:** Confirmed no `Dockerfile` or `.dockerignore` exists; established multi-stage Docker build specification targeting Java 21; containerization intentionally deferred to D2.
+- **Build Verification:** Local execution verified `mvn clean package -DskipTests` (BUILD SUCCESS, 9.7s) and `npm run build` (BUILD SUCCESS, 4.37s) produce clean, deployable production artifacts.
+- **Zero Cloud Impact:** Verified zero cloud resources provisioned, zero deployment actions executed, and zero application code modified in Phase D0.
 
 ---
 
 ## Phase D1 — Production PostgreSQL on Render
 
-**Status: PLANNED**
+**Status: READY FOR EXECUTION**
 
 ### Objective
 Provision and configure the managed PostgreSQL database instance on Render to serve as the production persistence store.
@@ -933,8 +939,8 @@ Harden production configurations, complete system documentation, establish opera
 
 | Milestone | Outcome | Status | Target Phase |
 | :--- | :--- | :--- | :--- |
-| **MD0** | Deployment Planning & Readiness Audit | READY FOR EXECUTION | Phase D0 |
-| **MD1** | Production PostgreSQL on Render | PLANNED | Phase D1 |
+| **MD0** | Deployment Planning & Readiness Audit | COMPLETED (2026-09-30) | Phase D0 |
+| **MD1** | Production PostgreSQL on Render | READY FOR EXECUTION | Phase D1 |
 | **MD2** | Dockerize Spring Boot Backend | PLANNED | Phase D2 |
 | **MD3** | Deploy Dockerized Backend to Render | PLANNED | Phase D3 |
 | **MD4** | Backend Production Verification | PLANNED | Phase D4 |

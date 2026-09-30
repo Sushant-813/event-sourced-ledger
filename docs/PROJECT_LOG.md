@@ -2,9 +2,9 @@
 
 **Project Name:** Event-Sourced Ledger
 
-**Status:** v1.0 Released
+**Status:** In Progress (Phase D — Production Deployment)
 
-**Current Version:** v1.0
+**Current Version:** v1.1.0 (Full-Stack Source Checkpoint)
 
 ---
 
@@ -1821,5 +1821,101 @@ Backend Diff:         Completely clean / untouched (0 modifications)
 - ADR-035: Application-Wide Theme Architecture: Semantic Token Inversion, Anti-Flash Inline Initialization, and Preference Persistence
 - ADR-036: Collapsible Desktop Navigation Shell: Persistent Drawer State, Isolated Breakpoint Context, and Accessible Iconography
 
-No git commit has been created; all changes remain pending the final user-driven commit.
+---
+
+## 2026-09-30
+
+### Phase D0 — Deployment Planning & Readiness: COMPLETED
+
+**Phase:** D0 — Deployment Planning & Readiness  
+**Status:** COMPLETED  
+**Date:** 2026-09-30  
+**Baseline:** `v1.1.0` — Full-Stack Source Checkpoint (`ef3f96a`)  
+**Purpose:** Deployment readiness audit and gap identification before provisioning production infrastructure.
+
+Following the completion of the full-stack implementation milestone and the tagging of Git checkpoint `v1.1.0`, a comprehensive deployment readiness audit was conducted across the codebase, configuration properties, build tools, secret boundaries, and cloud hosting architecture.
+
+#### Key Verified Findings
+
+1. **Repository / Git Readiness**
+   - The `main` branch is clean, verified, and synchronized with `origin/main`.
+   - Git tag `v1.1.0` points to commit `ef3f96a` and strictly represents the pre-deployment full-stack source baseline.
+   - Clean structural separation maintained between `backend/`, `frontend/`, and `docs/`.
+   - Zero premature deployment artifacts existed prior to deployment planning (no `Dockerfile`, `.dockerignore`, `render.yaml`, or `vercel.json`).
+
+2. **Backend Production Configuration**
+   - **Framework:** Spring Boot `3.5.16` on **Java 21** (LTS).
+   - **Persistence:** Relational PostgreSQL configuration is fully externalized via environment variables: `LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`.
+   - **Database Migrations:** Flyway is enabled and configured for classpath migrations (`V1` through `V5`), executing automatically on startup.
+   - **Schema Validation:** Hibernate `ddl-auto=validate` is active, strictly preventing runtime schema modifications.
+   - **Port Configuration:** Server port is currently hardcoded to `server.port=8080` in `application.properties`. Render dynamically injects a `PORT` environment variable; this must be updated to `server.port=${PORT:8080}` in Phase D2.
+   - **Logging Profiles:** `logback-spring.xml` includes an active production profile (`<springProfile name="prod">`) that will activate when `SPRING_PROFILES_ACTIVE=prod`.
+
+3. **Frontend Production Configuration**
+   - **Stack:** React 19, TypeScript 5.8, TanStack Query 5, Vite 6.4.3.
+   - **API Client:** `src/api/client.ts` uses `VITE_API_BASE_URL` as the centralized endpoint prefix.
+   - **Proxy Bypass:** In production builds, the Vite development proxy (`vite.config.ts`) is automatically bypassed, constructing absolute HTTPS URLs against the backend when `VITE_API_BASE_URL` is set.
+   - **SPA Routing:** React Router v7 uses client-side HTML5 history routing (`/`, `/dashboard`, `/accounts`, `/accounts/:id/overview`, etc.). Vercel requires a SPA rewrite configuration (`vercel.json`) to redirect deep links and page refreshes to `/index.html` to avoid 404s.
+
+4. **Environment & Secret Hygiene Audit**
+   - Database credentials (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`) are strictly isolated to backend runtime properties and never enter frontend code.
+   - Zero private credentials, secrets, or certificates are committed to Git.
+   - `VITE_API_BASE_URL` is public and client-facing (injected into client JavaScript at build time).
+   - Production environment variables will be securely configured in Render and Vercel cloud dashboards during their respective phases.
+
+5. **CORS Analysis**
+   - The Spring Boot backend currently has **no CORS configuration** (no `@CrossOrigin`, no `WebMvcConfigurer`, and no `CorsFilter`).
+   - Development functioned without CORS because the Vite dev server acted as a same-origin reverse proxy.
+   - Production cross-origin requests from the Vercel domain (`https://<app>.vercel.app`) to the Render service (`https://<service>.onrender.com`) will be blocked by browsers unless CORS is configured.
+   - A centralized `CorsConfig` WebMvc configuration supporting `cors.allowed-origins` must be implemented before deploying the backend.
+
+6. **Docker Readiness**
+   - No `Dockerfile` or `.dockerignore` currently exists in the repository.
+   - A multi-stage Docker build architecture targeting Java 21 (`eclipse-temurin:21-jdk-jammy` builder and `eclipse-temurin:21-jre-jammy` runtime) was established.
+   - Concrete Dockerization and local container verification are intentionally deferred to Phase D2.
+
+7. **Production Build Verification**
+   - **Backend:** `mvn clean package -DskipTests` executed cleanly in 9.7 seconds, producing repackaged executable JAR `target/event-sourced-ledger-1.0.0.jar`.
+   - **Frontend Typecheck:** `npm run typecheck` (`tsc --noEmit`) passed with 0 compiler errors.
+   - **Frontend Linter:** `npm run lint` (`eslint . --max-warnings 0`) passed with 0 errors and 0 warnings.
+   - **Frontend Build:** `npm run build` (`tsc -b && vite build`) executed in 4.37 seconds, generating an optimized static bundle in `frontend/dist/`.
+
+8. **Deployment Gaps Identified**
+   - `server.port` must be updated to `${PORT:8080}` to bind to Render's dynamically assigned port.
+   - Centralized backend CORS configuration (`CorsConfig.java`) must be created to permit requests from Vercel.
+   - Production multi-stage `Dockerfile` and `.dockerignore` must be authored for containerized backend execution.
+   - Frontend `vercel.json` must be created to configure SPA route fallbacks.
+   - Cloud provider environment variables must be defined across Render and Vercel dashboards.
+
+9. **Phase D0 Transition & Next Phase**
+   - Phase D0 has **zero blockers**.
+   - The repository is in an ideal, fully audited state to proceed directly to **Phase D1 — Production PostgreSQL on Render**.
+   - Phase D1 consists of external cloud provisioning (Render PostgreSQL) and requires zero repository source code changes.
+
+#### Milestone Scope Boundary: Completed vs. Deferred
+
+| Category | Item | Status / Target Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | Repository & Git readiness audit | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | Backend & frontend configuration audit | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | Secret boundary & environment variable audit | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | CORS requirements analysis & design | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | Docker multi-stage build architecture design | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | Non-destructive local build verifications (`mvn`, `npm`) | **COMPLETED** (Phase D0) |
+| **COMPLETED NOW** | Deployment gap report & transition roadmap | **COMPLETED** (Phase D0) |
+| **DEFERRED TO LATER** | Provision Render PostgreSQL instance | **Phase D1** |
+| **DEFERRED TO LATER** | Implement backend PORT & CORS configuration | **Phase D2** |
+| **DEFERRED TO LATER** | Create Dockerfile & test local container | **Phase D2** |
+| **DEFERRED TO LATER** | Deploy Dockerized backend Web Service to Render | **Phase D3** |
+| **DEFERRED TO LATER** | Backend production smoke & invariant verification | **Phase D4** |
+| **DEFERRED TO LATER** | Frontend production config (`VITE_API_BASE_URL`, `vercel.json`) | **Phase D5** |
+| **DEFERRED TO LATER** | Deploy frontend static bundle to Vercel | **Phase D6** |
+| **DEFERRED TO LATER** | Full-stack cloud integration & Playwright E2E verification | **Phase D7** |
+| **DEFERRED TO LATER** | Production hardening, runbooks, and final release tagging | **Phase D8** |
+
+#### New ADRs Recorded
+
+- ADR-037: Production Cloud Deployment Topology: Render (Managed PostgreSQL & Dockerized Spring Boot) + Vercel (React SPA)
+
+No git commit has been created; documentation updates remain pending user review.
 
