@@ -17,8 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phase D0 COMPLETED (2026-09-30)  
-- **Next Phase (Phase D1):** Production PostgreSQL on Render (READY FOR EXECUTION)  
+- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0 & D1 COMPLETED (2026-09-30)  
+- **Next Phase (Phase D2):** Dockerize Spring Boot Backend (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -720,7 +720,7 @@ Conduct a comprehensive repository and configuration audit to ensure full produc
 
 ## Phase D1 — Production PostgreSQL on Render
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED — 2026-09-30**
 
 ### Objective
 Provision and configure the managed PostgreSQL database instance on Render to serve as the production persistence store.
@@ -735,24 +735,26 @@ Provision and configure the managed PostgreSQL database instance on Render to se
 - **PostgreSQL Connectivity Verification:** Validate remote network accessibility and authentication from external tools.
 - **Flyway Migration Strategy Verification:** Confirm that Flyway migrations `V1__Create_Accounts.sql` through `V5__Seed_Sys_Cash_Account.sql` are prepared to execute sequentially against the clean remote schema upon backend startup.
 
-### Verification Gates
-- Render PostgreSQL instance active, healthy, and accepting SSL connections.
-- Connection credentials verified without committing secrets to repository files.
-- Flyway migration strategy verified for remote execution.
+### Verification Gates Passed
+- Render Managed PostgreSQL instance `event-sourced-ledger-db` provisioned in Oregon (US West) on PostgreSQL 18; status reports `Available`.
+- Assigned database name `ledger_db_6isw` with database user `ledger_user` on port 5432 established.
+- Connection credentials securely provisioned and rotated; internal and external connection information available in Render dashboard.
+- Verified database is in a clean state with zero application tables and no migrations applied; ready for automatic Flyway execution (`V1`–`V5`) upon backend startup.
+- Zero application source code modified, and no manual schema creation or manual Flyway runs executed.
 
 ---
 
 ## Phase D2 — Dockerize Spring Boot Backend
 
-**Status: PLANNED**
+**Status: READY FOR EXECUTION**
 
 ### Objective
 Containerize the Spring Boot backend using a production-ready multi-stage Docker build and verify local container execution and environment injection.
 
 ### Deliverables & Scope
 - **Dockerfile Creation:** Author a production-appropriate multi-stage `Dockerfile`:
-  - *Builder Stage:* Compile and package the Spring Boot application using Maven and OpenJDK 17.
-  - *Runtime Stage:* Lightweight JRE 17 base image containing only the executable JAR and minimal runtime dependencies.
+  - *Builder Stage:* Compile and package the Spring Boot application using Maven and OpenJDK 21.
+  - *Runtime Stage:* Lightweight JRE 21 base image containing only the executable JAR and minimal runtime dependencies.
 - **Docker Ignore Configuration:** Author `.dockerignore` to exclude `target/`, `.git/`, IDE files, test logs, frontend assets, and local documentation.
 - **Local Container Build:** Build the Docker image locally (`docker build -t event-sourced-ledger-backend .`).
 - **Local Container Execution:** Run the backend container locally with injected environment variables simulating production configuration.
@@ -940,8 +942,8 @@ Harden production configurations, complete system documentation, establish opera
 | Milestone | Outcome | Status | Target Phase |
 | :--- | :--- | :--- | :--- |
 | **MD0** | Deployment Planning & Readiness Audit | COMPLETED (2026-09-30) | Phase D0 |
-| **MD1** | Production PostgreSQL on Render | READY FOR EXECUTION | Phase D1 |
-| **MD2** | Dockerize Spring Boot Backend | PLANNED | Phase D2 |
+| **MD1** | Production PostgreSQL on Render | COMPLETED (2026-09-30) | Phase D1 |
+| **MD2** | Dockerize Spring Boot Backend | READY FOR EXECUTION | Phase D2 |
 | **MD3** | Deploy Dockerized Backend to Render | PLANNED | Phase D3 |
 | **MD4** | Backend Production Verification | PLANNED | Phase D4 |
 | **MD5** | Configure Frontend for Production | PLANNED | Phase D5 |

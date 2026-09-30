@@ -1917,5 +1917,72 @@ Following the completion of the full-stack implementation milestone and the tagg
 
 - ADR-037: Production Cloud Deployment Topology: Render (Managed PostgreSQL & Dockerized Spring Boot) + Vercel (React SPA)
 
+---
+
+## 2026-09-30
+
+### Phase D1 — Production PostgreSQL on Render: COMPLETED
+
+**Phase:** D1 — Production PostgreSQL on Render  
+**Status:** COMPLETED  
+**Date:** 2026-09-30  
+**Baseline:** `v1.1.0` — Full-Stack Source Checkpoint (`ef3f96a`)  
+**Purpose:** Provision and verify the cloud managed PostgreSQL database on Render as the authoritative persistence store for the event-sourced ledger.
+
+Following the deployment planning and gap analysis in Phase D0, the production managed database instance was provisioned on Render.
+
+#### Infrastructure & Provisioning Metadata
+
+- **Provider:** Render Managed PostgreSQL
+- **Service Name:** `event-sourced-ledger-db`
+- **Environment:** Production
+- **Region:** Oregon (US West)
+- **PostgreSQL Version:** 18
+- **Service Tier / Plan:** Free tier
+- **Operational Status:** `Available`
+- **Assigned Database Name:** `ledger_db_6isw`
+- **Database User:** `ledger_user`
+- **Port:** `5432`
+- **SSL Mode:** Enforced (`sslmode=require`)
+
+#### Credential Hygiene & Connection Security
+
+- Production connection credentials have been securely provisioned and rotated following setup.
+- Internal network and external network connection details are securely stored in the Render dashboard.
+- Zero secrets, raw passwords, or credential-bearing URLs are recorded in repository source or Git history.
+- Backend datasource mapping confirmed:
+  - `LEDGER_DB_URL`: Formatted as JDBC URL (`jdbc:postgresql://...`) with SSL enforcement.
+  - `LEDGER_DB_USERNAME`: Set to `ledger_user`.
+  - `LEDGER_DB_PASSWORD`: Set to the rotated Render password.
+
+#### Schema State & Architectural Invariant Preservation
+
+- **Untouched Clean Schema:** The provisioned database is verified to be completely clean and empty of application schema.
+- **Zero Manual DDL:** No tables, indexes, constraints, or seeds were manually created.
+- **Flyway Authority:** The database intentionally awaits the deployment of the Dockerized Spring Boot backend in Phase D3, where Flyway migrations (`V1` through `V5`) will execute automatically on container startup.
+- **Backend & Frontend Isolation:** No backend deployment and no frontend deployment occurred during Phase D1.
+- **Source Code Integrity:** Zero application code, test code, or build configuration was modified.
+
+#### Milestone Scope Boundary: Completed vs. Deferred
+
+| Category | Item | Status / Target Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | Render PostgreSQL database provisioning (`event-sourced-ledger-db`) | **COMPLETED** (Phase D1) |
+| **COMPLETED NOW** | Credential generation, rotation, and external connection verification | **COMPLETED** (Phase D1) |
+| **COMPLETED NOW** | Clean schema validation (awaiting automated Flyway execution) | **COMPLETED** (Phase D1) |
+| **DEFERRED TO LATER** | Backend containerization (Dockerfile & .dockerignore) | **Phase D2** |
+| **DEFERRED TO LATER** | Backend PORT & CORS configuration | **Phase D2** |
+| **DEFERRED TO LATER** | Deploy Dockerized backend to Render Web Service | **Phase D3** |
+| **DEFERRED TO LATER** | Automated Flyway migration execution on cloud DB | **Phase D3 / D4** |
+| **DEFERRED TO LATER** | Backend production smoke & invariant verification | **Phase D4** |
+| **DEFERRED TO LATER** | Frontend production config (`VITE_API_BASE_URL`, `vercel.json`) | **Phase D5** |
+| **DEFERRED TO LATER** | Deploy frontend static bundle to Vercel | **Phase D6** |
+| **DEFERRED TO LATER** | Full-stack cloud integration & Playwright E2E verification | **Phase D7** |
+| **DEFERRED TO LATER** | Production hardening, runbooks, and final release tagging | **Phase D8** |
+
+#### Transition to Next Phase
+
+Phase D1 is complete with zero blockers. The project is ready to proceed to **Phase D2 — Dockerize Spring Boot Backend**, which will introduce the multi-stage `Dockerfile`, `.dockerignore`, dynamic `server.port` binding, and centralized CORS configuration for local container verification.
+
 No git commit has been created; documentation updates remain pending user review.
 
