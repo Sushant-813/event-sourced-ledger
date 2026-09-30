@@ -1,7 +1,7 @@
 # Project Roadmap
 
 **Project Name:** Event-Sourced Ledger (Double-Entry Bank Core)  
-**Version:** 1.1.0  
+**Version:** 1.1.0 (Full-Stack Source Checkpoint)  
 **Current Status:**  
 - **Backend (Phases 0–10):** COMPLETED — v1.0.0 RELEASED (2026-09-21)  
 - **Frontend Planning & Documentation:** COMPLETED (2026-09-23)  
@@ -16,7 +16,9 @@
   - Application-Wide Light/Dark Theme System (tokenized with persistence)  
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
-- **Future Enhancements:** DEFERRED / POST-v1.0  
+- **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
+- **Production Deployment Roadmap (Phases D0–D8):** READY FOR EXECUTION (Upcoming)  
+- **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
 
@@ -32,7 +34,9 @@ The project intentionally followed a **backend-first** methodology:
 3. Frontend planning and architectural specifications were finalized.
 4. Frontend implementation proceeded against the frozen, authoritative backend contract across Phases F0–F5.
 5. Post-F5 product-polish enhancements established desktop workspace flexibility, visual theme personalization, and public architectural positioning.
-6. Future enterprise capabilities remain strictly isolated from current v1.0 deliverables.
+6. Full-stack source checkpoint was established, verified, and tagged as `v1.1.0`.
+7. Production deployment proceeds across Phases D0–D8, establishing live cloud infrastructure (Render + Vercel) while strictly preserving backend authority and double-entry invariants.
+8. Future enterprise capabilities remain strictly isolated from current deliverables.
 
 ---
 
@@ -45,6 +49,7 @@ The project adheres to these core architectural and execution principles:
 - **Validate business rules before building UI**: User interfaces reflect authoritative server state; they do not calculate or synthesize balances.
 - **Contract-first frontend delivery**: The frontend is built to consume the frozen backend v1.0.0 REST API without altering backend behavior or inventing endpoints.
 - **Complete one milestone before beginning the next**: Every phase is independently testable, documented, and verifiable before proceeding.
+- **Operational and domain separation**: Cloud deployment and containerization are operational capabilities designed to host and expose the verified full-stack system without altering financial domain logic, accounting invariants, or server authority.
 
 ---
 
@@ -55,13 +60,16 @@ The project adheres to these core architectural and execution principles:
 - **Frontend Planning**: Frozen PRD, TRD, Design System tokens, and Frontend Architecture (**COMPLETED**).
 - **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Phase F3 (Financial History) COMPLETED (2026-09-28); Phase F4 (Audit Experience) COMPLETED (2026-09-29); Phase F5 (Dashboard & Release Readiness) COMPLETED (2026-09-30).
 - **Post-F5 Frontend Enhancements**: Collapsible desktop sidebar, application-wide dark mode, public product landing page at `/`, and internal application header brand navigation to `/` (**COMPLETED 2026-09-30**).
+- **Full-Stack Source Checkpoint**: Complete pre-deployment full-stack codebase tagged and pushed as `v1.1.0` (**COMPLETED 2026-09-30**).
+- **Production Deployment (Phases D0–D8)**: Production cloud deployment to Render (PostgreSQL database & Dockerized Spring Boot backend) and Vercel (React + TypeScript + Vite frontend) (**READY FOR EXECUTION**).
 
-### 3.2 What is Intentionally Deferred (Post-v1.0)
+### 3.2 What is Intentionally Deferred (Post-v1.0 / Post-Deployment)
 - User authentication and Role-Based Access Control (RBAC).
 - Global transaction/ledger search and exploratory analytics.
 - Snapshotting, CQRS, and Kafka event streaming.
 - Multi-currency support and distributed idempotency keys.
-- Containerization (Docker) and automated CI/CD deployment pipelines.
+- Containerization (Docker) and automated CI/CD deployment pipelines.  
+  *(Historical scope note: Docker containerization was originally deferred from the v1.0 backend milestone. As documented in Section 10, single-container Docker packaging is now formally adopted specifically as the operational runtime packaging for Render backend deployment in Phase D2. Multi-container orchestration and automated CI/CD pipelines remain deferred to subsequent phases.)*
 
 ---
 
@@ -606,9 +614,340 @@ Following the formal completion and code review of Phase F5, four focused produc
 
 ---
 
-# 10. Future Enhancements (Beyond v1.0)
+# 10. Production Deployment Roadmap (Phases D0–D8)
 
-The following architectural and functional capabilities are intentionally excluded from the current Frontend v1.0 scope and will be evaluated in future project phases:
+### 10.1 Confirmed Deployment Decisions & Architecture
+The production deployment strategy connects the independently verified Spring Boot backend and React frontend into a live, publicly accessible cloud environment while strictly preserving the system's foundational architectural invariants:
+
+1. **Database:**
+   - PostgreSQL hosted on **Render**.
+   - Serves as the authoritative, durable relational datastore for all events, transactions, and ledger entries.
+   - Connected via secure JDBC connection string (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`).
+   - Flyway remains solely responsible for executing database migrations (`V1` through `V5`).
+   - Hibernate schema validation (`ddl-auto=validate`) remains enabled to verify entity-to-schema alignment on startup.
+
+2. **Backend:**
+   - Spring Boot backend deployed on **Render**.
+   - Packaged and containerized with Docker using a production-appropriate multi-stage build.
+   - Render deploys and orchestrates the Dockerized backend service directly from GitHub.
+   - Configured via environment variables for database credentials, port binding, and CORS configuration.
+   - Remains the authoritative source of truth for all financial state, double-entry balancing, and balance reconstruction.
+
+3. **Frontend:**
+   - React + TypeScript + Vite SPA deployed on **Vercel**.
+   - Optimized static bundle deployed to Vercel's global edge network.
+   - Production frontend configured with `VITE_API_BASE_URL` pointing to the Render backend URL over HTTPS.
+   - Single Page Application (SPA) routing and deep-linking rewrite rules configured via `vercel.json` to prevent 404s on sub-route reloads.
+   - Performs zero financial calculations, zero optimistic balance mutations, and zero client-side balance reconstruction.
+
+4. **Deployment Architecture:**
+
+```text
+   Users
+      ↓
+   Vercel
+   React / TypeScript / Vite
+      ↓ HTTPS REST
+   Render
+   Dockerized Spring Boot Backend
+      ↓ JDBC
+   Render PostgreSQL
+```
+
+5. **Architectural Principles & Invariants:**
+   - **Backend Authority:** The backend remains the sole source of truth; all balances are derived server-side.
+   - **Zero Client Calculation:** The frontend is strictly a presentation and command-dispatch layer.
+   - **Financial Integrity:** Deployment preserves event sourcing, double-entry equilibrium, pessimistic concurrency control, and system contra-account (`SYS-CASH`) isolation.
+   - **Configuration Hygiene:** Zero secrets or database credentials bundled in frontend client code or committed to repository source.
+
+6. **Release Versioning Progression Model:**
+The transition from full-stack development to verified production is governed by a strict versioning sequence:
+
+```text
+v1.0.0
+Backend complete/released
+        ↓
+v1.1.0
+Full-stack source checkpoint
+        ↓
+Deployment Roadmap
+D0 → D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8
+        ↓
+Production deployment complete
+        ↓
+Final production release/tag
+```
+
+- **`v1.0.0` (Backend Complete / Released):** Tagged and released on 2026-09-21 upon completion of Phases 0–10 (244 tests, 0 failures).
+- **`v1.1.0` (Full-Stack Source Checkpoint):** Tagged and pushed on 2026-09-30 upon completion of Phases F0–F5 and Post-F5 product polish (205 frontend tests, Vitest + Playwright E2E). This tag represents the complete pre-deployment source baseline. **It is NOT the production release tag.**
+- **`D0 → D8` (Deployment Execution Roadmap):** Sequential, verifiable infrastructure and operational rollout phases.
+- **`Final Production Release / Tag`:** The final production release version and Git tag will be formally determined, tagged, and released only **after** production deployment and end-to-end cloud verification (D0–D8) are fully complete.
+
+---
+
+### 10.2 Phased Deployment Plan (Phases D0–D8)
+
+## Phase D0 — Deployment Planning & Readiness
+
+**Status: READY FOR EXECUTION**
+
+### Objective
+Conduct a comprehensive repository and configuration audit to ensure full production readiness across backend, frontend, environment boundaries, and container definitions without initiating cloud deployment.
+
+### Deliverables & Scope
+- **Repository Readiness Audit:** Validate workspace cleanliness, branch alignment, and pre-deployment source integrity against the `v1.1.0` baseline.
+- **Backend Configuration Review:** Audit `application.properties` and profile handling for production PostgreSQL connectivity, Flyway migration execution, Hibernate schema validation, and server port configuration.
+- **Frontend Configuration Review:** Audit `vite.config.ts`, environment variables (`VITE_API_BASE_URL`), and API client endpoint registries to ensure complete elimination of development-only proxy dependencies.
+- **Environment & Secret Boundaries:** Define the strict separation between public build-time frontend variables and private runtime backend credentials (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`).
+- **CORS Requirements Analysis:** Define explicit CORS allowlists permitting cross-origin HTTPS requests from the Vercel production domain to the Render backend service while rejecting unauthorized origins.
+- **Docker Requirements Definition:** Establish multi-stage Docker build specifications (Maven/JDK builder stage and lean JRE runtime stage) and comprehensive `.dockerignore` filters.
+- **Production Build Validation:** Verify local generation of clean frontend static artifacts (`npm run build`) and backend executable JAR (`mvn clean package -DskipTests`).
+- **Gap Identification:** Document all required configuration adjustments prior to cloud provisioning.
+- **Execution Constraint:** Zero cloud resources provisioned and zero live deployment steps initiated in Phase D0.
+
+### Verification Gates
+- Audit report completed documenting all environment variable contracts and build requirements.
+- Secret boundaries and CORS policies verified and approved.
+- Zero premature deployment actions or external resources provisioned.
+
+---
+
+## Phase D1 — Production PostgreSQL on Render
+
+**Status: PLANNED**
+
+### Objective
+Provision and configure the managed PostgreSQL database instance on Render to serve as the production persistence store.
+
+### Deliverables & Scope
+- **Render PostgreSQL Provisioning:** Create and configure a managed PostgreSQL database instance on Render.
+- **Connection Configuration:** Establish secure production database connection credentials.
+- **Environment Configuration:** Configure database environment variables:
+  - `LEDGER_DB_URL` (JDBC connection string with SSL enforcement, e.g., `jdbc:postgresql://<host>:<port>/<database>?sslmode=require`).
+  - `LEDGER_DB_USERNAME` (production database user).
+  - `LEDGER_DB_PASSWORD` (production database password).
+- **PostgreSQL Connectivity Verification:** Validate remote network accessibility and authentication from external tools.
+- **Flyway Migration Strategy Verification:** Confirm that Flyway migrations `V1__Create_Accounts.sql` through `V5__Seed_Sys_Cash_Account.sql` are prepared to execute sequentially against the clean remote schema upon backend startup.
+
+### Verification Gates
+- Render PostgreSQL instance active, healthy, and accepting SSL connections.
+- Connection credentials verified without committing secrets to repository files.
+- Flyway migration strategy verified for remote execution.
+
+---
+
+## Phase D2 — Dockerize Spring Boot Backend
+
+**Status: PLANNED**
+
+### Objective
+Containerize the Spring Boot backend using a production-ready multi-stage Docker build and verify local container execution and environment injection.
+
+### Deliverables & Scope
+- **Dockerfile Creation:** Author a production-appropriate multi-stage `Dockerfile`:
+  - *Builder Stage:* Compile and package the Spring Boot application using Maven and OpenJDK 17.
+  - *Runtime Stage:* Lightweight JRE 17 base image containing only the executable JAR and minimal runtime dependencies.
+- **Docker Ignore Configuration:** Author `.dockerignore` to exclude `target/`, `.git/`, IDE files, test logs, frontend assets, and local documentation.
+- **Local Container Build:** Build the Docker image locally (`docker build -t event-sourced-ledger-backend .`).
+- **Local Container Execution:** Run the backend container locally with injected environment variables simulating production configuration.
+- **Environment Variable Injection Verification:** Confirm runtime ingestion of `LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`, and `PORT`.
+- **Application Startup Verification:** Confirm Spring Boot application context initializes cleanly within the container.
+- **Flyway & Hibernate Verification:** Confirm Flyway executes migrations and Hibernate validates the schema (`ddl-auto=validate`) inside the container.
+- **API Availability Check:** Verify REST endpoints respond correctly on the exposed container port.
+
+### Verification Gates
+- Multi-stage Docker image builds cleanly with minimal footprint.
+- Container starts cleanly when supplied with environment variables.
+- Flyway migrations run successfully and schema validation passes.
+- Local containerized endpoints serve valid HTTP responses.
+
+---
+
+## Phase D3 — Deploy Backend to Render
+
+**Status: PLANNED**
+
+### Objective
+Deploy the Dockerized Spring Boot backend to Render as a Web Service connected to the production Render PostgreSQL database.
+
+### Deliverables & Scope
+- **Render Service Creation:** Configure a new Web Service on Render referencing the GitHub repository.
+- **Deployment Mode:** Connect the service to deploy using the project's root/backend `Dockerfile`.
+- **Environment Variable Binding:** Inject production secrets and configuration via Render environment settings:
+  - `LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD` (referencing Render PostgreSQL).
+  - `PORT` (configured to match Render's assigned port).
+  - CORS allowed origins (configured for future Vercel domain).
+- **Service Configuration:** Configure service plan, health check path, and start commands as required.
+- **Database Interconnect:** Link backend service to the Render PostgreSQL instance within the same private/public network.
+- **Endpoint Discovery:** Obtain the live production backend URL (e.g. `https://<service-name>.onrender.com`).
+
+### Verification Gates
+- Render build and deploy pipeline succeeds from GitHub source.
+- Backend container boots successfully in the Render cloud runtime.
+- Backend establishes JDBC connection to Render PostgreSQL.
+- Public HTTPS backend URL is provisioned and responsive.
+
+---
+
+## Phase D4 — Backend Production Verification
+
+**Status: PLANNED**
+
+### Objective
+Conduct rigorous functional and architectural verification of the deployed Render backend to confirm stability, invariant safety, and production readiness before initiating frontend deployment.
+
+### Deliverables & Scope
+- **Container Health & Log Audit:** Inspect Render runtime logs for clean Spring Boot startup with zero warnings or errors.
+- **Database Connectivity Verification:** Confirm steady connection pooling with Render PostgreSQL.
+- **Migration & Seeding Audit:** Verify Flyway applied migrations `V1`–`V5` and `SYS-CASH` contra-account exists at ID 1.
+- **Hibernate Schema Validation:** Confirm `ddl-auto=validate` passed without schema mismatch.
+- **Representative REST Endpoint Verification:** Test core collection endpoints (`GET /accounts`, `GET /accounts?status=ACTIVE`).
+- **Representative Financial Flows:** Execute live production smoke flows:
+  - Account creation (`POST /accounts`).
+  - Account deposit (`POST /accounts/{id}/deposit`).
+  - Account withdrawal (`POST /accounts/{id}/withdrawal`).
+  - Account-to-account transfer (`POST /transfers`).
+- **Audit & History Verification:** Test audit endpoints (`/accounts/{id}/audit/balance`, `/audit/trail`, `/audit/ledger`, `/audit/events`).
+- **Invariant Verification:** Confirm double-entry balance equilibrium, optimistic/pessimistic row locking, and strict `SYS-CASH` API isolation (HTTP 404).
+- **Readiness Sign-Off:** Formally approve backend production readiness prior to frontend deployment.
+
+### Verification Gates
+- Production backend logs confirm clean startup and zero uncaught exceptions.
+- All core financial operations execute with complete double-entry correctness.
+- Backend confirmed ready to receive frontend traffic.
+
+---
+
+## Phase D5 — Configure Frontend for Production
+
+**Status: PLANNED**
+
+### Objective
+Configure the React + TypeScript + Vite frontend for production deployment targeting the live Render backend, ensuring environment isolation and SPA routing compatibility.
+
+### Deliverables & Scope
+- **Production API URL Configuration:** Configure `VITE_API_BASE_URL` to point to the production Render backend HTTPS URL.
+- **Proxy Dependency Removal:** Ensure production build paths bypass Vite development proxy configurations and rely exclusively on configured environment variables.
+- **Vite Production Optimization:** Verify `vite.config.ts` produces optimized, chunk-split static bundles with content hashing.
+- **SPA Fallback Configuration:** Author and review `vercel.json` routing rules with rewrites directing all non-asset requests to `/index.html` to support deep linking and page refresh.
+- **Local Production Simulation:** Execute `npm run build` and test the output locally via `npm run preview` against the live Render backend.
+- **Secret Exposure Audit:** Inspect compiled bundles to ensure zero sensitive keys, tokens, or backend credentials are inadvertently leaked to client code.
+
+### Verification Gates
+- `npm run build` compiles cleanly with zero TypeScript errors or lint warnings.
+- Frontend static build correctly issues network requests to the live Render backend URL.
+- Local preview verifies deep linking and page refreshes on `/accounts`, `/accounts/:id/overview`, and `/dashboard`.
+
+---
+
+## Phase D6 — Deploy Frontend to Vercel
+
+**Status: PLANNED**
+
+### Objective
+Deploy the React + TypeScript + Vite static frontend application to Vercel's global edge network.
+
+### Deliverables & Scope
+- **Vercel Project Setup:** Import and configure the GitHub repository in the Vercel dashboard.
+- **Build Settings Configuration:** Configure root directory (`frontend`), build command (`npm run build`), output directory (`dist`), and install command (`npm install`).
+- **Production Environment Variables:** Set `VITE_API_BASE_URL` in Vercel project environment settings.
+- **SPA Routing Verification:** Ensure `vercel.json` rewrite configuration is active on Vercel edge routes.
+- **Static Bundle Deployment:** Execute production deployment to Vercel.
+- **Domain & SSL Provisioning:** Obtain the live production frontend URL (e.g. `https://<project-name>.vercel.app`) with automated SSL certificate.
+
+### Verification Gates
+- Vercel build and deployment pipeline succeeds with clean logs.
+- Deployed frontend application loads over public HTTPS.
+- Direct navigation and hard refresh on client routes (`/dashboard`, `/accounts`, `/accounts/2/overview`) resolve correctly without 404 errors.
+
+---
+
+## Phase D7 — Full-Stack Integration Verification
+
+**Status: PLANNED**
+
+### Objective
+Execute comprehensive end-to-end integration testing and user journey validation across the live full-stack system deployed on Vercel and Render.
+
+### Deliverables & Scope
+- **Public Showcase & Brand Navigation:**
+  - Verify public landing page (`/`) loads with hero, feature highlights, and architectural breakdown.
+  - Verify theme toggle switches between institutional light and dark modes with persistence.
+  - Verify navigation from landing page to `/dashboard` and internal header brand return to `/`.
+- **Portfolio Dashboard:**
+  - Verify aggregate metrics (Total Accounts, Active Accounts, Frozen Accounts) load from backend.
+  - Verify quick-action shortcuts trigger corresponding modals.
+- **Account Directory & Lifecycle:**
+  - Verify account directory browsing, sorting, and status filtering (`/accounts`).
+  - Verify account creation modal (`POST /accounts`) updates table and navigates to overview.
+  - Verify account freeze, activate, and close lifecycle transitions.
+- **Monetary Workflows:**
+  - Execute live deposit and verify authoritative balance refresh.
+  - Execute live withdrawal and verify balance decrease and insufficient funds rejection.
+  - Execute account-to-account transfer between two accounts and verify counterparty balances.
+- **Financial History Inspection:**
+  - Verify transaction history reflects canonical event order (`/transactions`).
+  - Verify double-entry ledger entries match debits and credits (`/ledger`).
+  - Verify event stream displays immutable domain events with raw payload inspection (`/events`).
+- **Audit Trail & Balance Reconstruction:**
+  - Verify audit trail running balance matches final balance (`/audit`).
+  - Verify point-in-time balance reconstruction using `asOf` temporal queries.
+- **CORS & Network Integration:** Confirm cross-origin browser requests between Vercel and Render complete without CORS header rejections or preflight failures.
+- **Automated E2E Verification:** Run relevant Playwright tests against live production URLs to validate the core user journey in real browser environments.
+
+### Verification Gates
+- All full-stack user journeys execute successfully in the live cloud deployment.
+- Zero CORS errors, zero 404 routing errors, and zero client-side calculation anomalies.
+- Automated Playwright E2E suite passes against production endpoints.
+
+---
+
+## Phase D8 — Production Hardening & Documentation
+
+**Status: PLANNED**
+
+### Objective
+Harden production configurations, complete system documentation, establish operational runbooks, and create the final production release tag.
+
+### Deliverables & Scope
+- **CORS Hardening:** Restrict Render backend CORS allowed origins strictly to the production Vercel domain (eliminating wildcard or broad origins).
+- **Environment & Secret Hygiene:** Conduct a final review of environment variables and access controls on Render and Vercel dashboards.
+- **Production Logging Audit:** Confirm production logs capture operational metrics while omitting sensitive customer data or credentials.
+- **Security & HTTPS Verification:** Confirm all communications are strictly encrypted over HTTPS and database connections enforce SSL.
+- **Architecture Documentation:** Update system architecture documentation reflecting the live Render + Vercel deployment topology.
+- **Documentation Synchronization:**
+  - Update `README.md` with live production URLs, cloud deployment architecture, and environment configuration instructions.
+  - Update `PROJECT_LOG.md` recording the complete chronological deployment milestone.
+  - Update `docs/PROJECT_ROADMAP.md` recording phase completion statuses, verification dates, and test metrics.
+- **Architectural Decision Records (ADRs):** Record any deployment-specific decisions in `docs/DECISIONS.md`.
+- **Final Production Release:** Decide, tag, and publish the final production release Git tag following verified end-to-end stability.
+
+### Verification Gates
+- Production environment hardened, secured, and validated.
+- All repository documentation synchronized with the live production deployment.
+- Final production release tag created and published.
+
+---
+
+# 11. Production Deployment Milestones Summary
+
+| Milestone | Outcome | Status | Target Phase |
+| :--- | :--- | :--- | :--- |
+| **MD0** | Deployment Planning & Readiness Audit | READY FOR EXECUTION | Phase D0 |
+| **MD1** | Production PostgreSQL on Render | PLANNED | Phase D1 |
+| **MD2** | Dockerize Spring Boot Backend | PLANNED | Phase D2 |
+| **MD3** | Deploy Dockerized Backend to Render | PLANNED | Phase D3 |
+| **MD4** | Backend Production Verification | PLANNED | Phase D4 |
+| **MD5** | Configure Frontend for Production | PLANNED | Phase D5 |
+| **MD6** | Deploy Frontend Static Bundle to Vercel | PLANNED | Phase D6 |
+| **MD7** | Full-Stack Integration & E2E Cloud Verification | PLANNED | Phase D7 |
+| **MD8** | Production Hardening, Documentation & Final Release Tagging | PLANNED | Phase D8 |
+
+---
+
+# 12. Future Enhancements (Beyond Production Deployment)
+
+The following architectural and functional capabilities are intentionally excluded from the current v1.0 / v1.1.0 and production deployment scope and will be evaluated in future project phases:
 
 ### Security & Identity
 - JWT authentication and token management.
@@ -628,19 +967,20 @@ The following architectural and functional capabilities are intentionally exclud
 - Real-time event streaming via WebSockets or Server-Sent Events (SSE).
 
 ### Infrastructure & Operations
-- Docker containerization and multi-container orchestration.
-- Automated CI/CD deployment pipelines.
-- Production monitoring, metrics collection, and OpenTelemetry tracing.
+- Multi-container orchestration (Kubernetes / ECS). *(Note: Single-container Docker packaging is adopted in Phase D2 for Render deployment).*
+- Automated CI/CD deployment pipelines (GitHub Actions deployment workflows).
+- Production monitoring, metrics collection, and OpenTelemetry distributed tracing.
+- Automated database backup and disaster recovery automation.
 
 ---
 
-# 11. Roadmap Maintenance & Guiding Philosophy
+# 13. Roadmap Maintenance & Guiding Philosophy
 
-This roadmap is a living document. As development progresses:
-- Completed frontend phases will be marked with completion dates and test metrics.
-- Architectural boundaries defined in `FRONTEND_ARCHITECTURE.md` must be maintained during implementation.
-- New capabilities must not be added to the v1.0 roadmap without corresponding PRD and TRD updates.
+This roadmap is a living document. As development and deployment progress:
+- Completed deployment phases will be marked with completion dates and verification metrics.
+- Architectural boundaries defined in `ARCHITECTURE.md` and `FRONTEND_ARCHITECTURE.md` must be maintained during deployment.
+- Production environment configurations must preserve backend financial authority and double-entry invariants at all times.
 
-> **"Build the foundation before the interface; build the interface to reflect the truth of the foundation."**
+> **"Build the foundation before the interface; build the interface to reflect the truth of the foundation; deploy the system to preserve that truth in production."**
 
-The backend is the immutable source of truth for the financial ledger. The frontend exists to provide clear, reliable, and accessible visibility into that truth. Every implementation phase builds directly upon the verified correctness of the layer beneath it.
+The backend is the immutable source of truth for the financial ledger. The frontend exists to provide clear, reliable, and accessible visibility into that truth. The production deployment infrastructure exists to deliver that verified truth securely and reliably to users. Every phase builds directly upon the verified correctness of the layer beneath it.
