@@ -17,8 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D2 COMPLETED (2026-10-01)  
-- **Next Phase (Phase D3):** Deploy Backend to Render (READY FOR EXECUTION)  
+- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D5 COMPLETED (2026-10-01)  
+- **Next Phase (Phase D6):** Deploy Frontend to Vercel (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -834,29 +834,32 @@ Conduct rigorous functional and architectural verification of the deployed Rende
 
 ## Phase D5 — Configure Frontend for Production
 
-**Status: PLANNED**
+**Status: COMPLETED (2026-10-01)**
 
 ### Objective
 Configure the React + TypeScript + Vite frontend for production deployment targeting the live Render backend, ensuring environment isolation and SPA routing compatibility.
 
 ### Deliverables & Scope
-- **Production API URL Configuration:** Configure `VITE_API_BASE_URL` to point to the production Render backend HTTPS URL.
-- **Proxy Dependency Removal:** Ensure production build paths bypass Vite development proxy configurations and rely exclusively on configured environment variables.
-- **Vite Production Optimization:** Verify `vite.config.ts` produces optimized, chunk-split static bundles with content hashing.
-- **SPA Fallback Configuration:** Author and review `vercel.json` routing rules with rewrites directing all non-asset requests to `/index.html` to support deep linking and page refresh.
-- **Local Production Simulation:** Execute `npm run build` and test the output locally via `npm run preview` against the live Render backend.
-- **Secret Exposure Audit:** Inspect compiled bundles to ensure zero sensitive keys, tokens, or backend credentials are inadvertently leaked to client code.
+- **Production API URL Configuration:** Configured `VITE_API_BASE_URL=https://event-sourced-ledger-backend.onrender.com` via `frontend/.env.production` and updated `frontend/.env.example`.
+- **Proxy Dependency Removal:** Confirmed production builds compile absolute Render backend URLs into the bundle (`BN="https://event-sourced-ledger-backend.onrender.com"`), completely bypassing Vite's dev proxy table.
+- **Vite Production Optimization:** Verified `tsc -b && vite build` produces clean, content-hashed static assets (`dist/assets/index-*.js`, `dist/assets/index-*.css`).
+- **SPA Fallback Configuration:** Created `frontend/vercel.json` with SPA rewrite rules (`/(.*)` -> `/index.html`) to support deep linking and page refreshes on Vercel Edge.
+- **Local Production Simulation:** Executed `npx vite preview --port 5173` locally against the live Render backend and verified all core client routes (`/`, `/dashboard`, `/accounts`, `/accounts/:id/overview`, `/accounts/:id/audit`).
+- **Secret Exposure Audit:** Conducted automated scan across all compiled files in `dist/`; confirmed zero database credentials, private keys, or backend secrets are leaked in client bundles.
+- **Live Cloud Smoke Verification:** Executed real end-to-end account creation (`ACC-432303`) through the preview UI against the live Render backend; verified immediate reflection in accounts list and overview.
 
 ### Verification Gates
-- `npm run build` compiles cleanly with zero TypeScript errors or lint warnings.
-- Frontend static build correctly issues network requests to the live Render backend URL.
-- Local preview verifies deep linking and page refreshes on `/accounts`, `/accounts/:id/overview`, and `/dashboard`.
+- `npm run typecheck` (`tsc --noEmit`) passes with 0 errors.
+- Frontend test suite (`npm test` / Vitest) passes 210/210 unit tests across 24 test suites.
+- `npm run build` compiles cleanly with zero errors.
+- Secret-exposure audit clean across all `dist/` artifacts.
+- Vite preview verified across all representative routes with direct communication to Render backend.
 
 ---
 
 ## Phase D6 — Deploy Frontend to Vercel
 
-**Status: PLANNED**
+**Status: READY FOR EXECUTION**
 
 ### Objective
 Deploy the React + TypeScript + Vite static frontend application to Vercel's global edge network.
@@ -952,8 +955,8 @@ Harden production configurations, complete system documentation, establish opera
 | **MD2** | Dockerize Spring Boot Backend | COMPLETED (2026-10-01) | Phase D2 |
 | **MD3** | Deploy Dockerized Backend to Render | READY FOR EXECUTION | Phase D3 |
 | **MD4** | Backend Production Verification | PLANNED | Phase D4 |
-| **MD5** | Configure Frontend for Production | PLANNED | Phase D5 |
-| **MD6** | Deploy Frontend Static Bundle to Vercel | PLANNED | Phase D6 |
+| **MD5** | Configure Frontend for Production | COMPLETED (2026-10-01) | Phase D5 |
+| **MD6** | Deploy Frontend Static Bundle to Vercel | READY FOR EXECUTION | Phase D6 |
 | **MD7** | Full-Stack Integration & E2E Cloud Verification | PLANNED | Phase D7 |
 | **MD8** | Production Hardening, Documentation & Final Release Tagging | PLANNED | Phase D8 |
 

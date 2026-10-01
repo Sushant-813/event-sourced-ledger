@@ -2096,4 +2096,87 @@ Phase D1 is complete with zero blockers. The project is ready to proceed to **Ph
 #### Transition to Next Phase
 
 Phase D2 is complete with zero blockers. The backend container packaging, dynamic port binding, and CORS configuration are fully verified and committed. The project is ready to proceed to **Phase D3 — Deploy Backend to Render**, which will configure the Render Web Service referencing the GitHub repository, inject production PostgreSQL credentials, bind `PORT`, configure production CORS allowed origins, and deploy the service live.
+
+---
+
+### Entry: 2026-10-01 — Phase D5: Configure Frontend for Production Completed
+
+#### Context & Objectives
+
+With the backend containerized, deployed, and verified live on Render (`https://event-sourced-ledger-backend.onrender.com`), Phase D5 prepared the Vite/React frontend for production deployment targeting Vercel edge hosting. The objectives were to establish production API configuration, implement Vercel SPA routing rewrites, verify production builds and test suites, perform secret-exposure audits, and validate the compiled bundle locally against the live Render backend without altering application behavior or domain logic.
+
+#### Implementation Scope & Configuration
+
+1. **Vercel SPA Fallback Configuration (`frontend/vercel.json`):**
+   - Created `frontend/vercel.json` configuring Vercel's edge router to rewrite all non-asset paths (`/(.*)`) to `/index.html`.
+   - Ensures that client-side React Router deep links and direct browser refreshes on routes such as `/accounts`, `/accounts/:accountId/overview`, and `/accounts/:accountId/audit` resolve correctly rather than returning Vercel 404 errors, while static assets (`/assets/*`, `.js`, `.css`, `.svg`) continue to be served directly.
+
+2. **Production API Endpoint Configuration (`frontend/.env.production` & `frontend/.env.example`):**
+   - Created `frontend/.env.production` containing:
+     ```properties
+     VITE_API_BASE_URL=https://event-sourced-ledger-backend.onrender.com
+     ```
+   - Updated `frontend/.env.example` to document local dev proxy conventions (leaving `VITE_API_BASE_URL` empty for local proxying) versus production cloud deployment (pointing to Render).
+   - In `frontend/src/api/client.ts`, the absolute URL causes all browser `fetch` calls to target the live Render backend directly, bypassing Vite's development proxy.
+
+#### Verification & Quality Gates
+
+1. **TypeScript Typecheck:**
+   - Executed `npm run typecheck` (`tsc --noEmit`).
+   - Result: 0 errors.
+
+2. **Unit Test Suite:**
+   - Executed `npm test` (`vitest run`).
+   - Result: 24/24 test files passed; 210/210 unit tests passed (duration: 28.99s).
+
+3. **Production Static Build:**
+   - Executed `npm run build` (`tsc -b && vite build`).
+   - Successfully generated:
+     - `dist/index.html` (1.50 kB)
+     - `dist/assets/index-C835hktC.css` (4.74 kB)
+     - `dist/assets/index-Bzr3McuW.js` (646.07 kB)
+   - Verified compiled bundle bakes in `https://event-sourced-ledger-backend.onrender.com` as the API base URL and contains zero occurrences of `localhost:8080`.
+
+4. **Production Artifact Secret-Exposure Audit:**
+   - Ran automated pattern search across all files in `frontend/dist/` scanning for database connection strings (`jdbc:postgresql:`, `postgres://`, `postgresql://`), passwords, private keys, and Render API/internal tokens.
+   - Result: Clean. Zero sensitive credentials or backend secrets are exposed in client bundles.
+
+5. **Local Vite Preview & Route Verification:**
+   - Served production build locally via `npx vite preview --port 5173` (matching Render backend's allowed CORS origins).
+   - Tested deep links and browser navigation via headless Playwright automation across:
+     - `/` (Root redirect / landing) — HTTP 200
+     - `/dashboard` — HTTP 200, successfully loaded active/frozen account metrics from Render
+     - `/accounts` — HTTP 200, successfully loaded account list from Render
+     - `/accounts/2/overview` — HTTP 200, successfully loaded account details and balance
+     - `/accounts/2/audit` — HTTP 200, successfully loaded audit trail events
+   - Confirmed all outbound API requests target `https://event-sourced-ledger-backend.onrender.com` and zero target local proxies.
+
+6. **Live Render Backend End-to-End Smoke Test:**
+   - Executed real account creation in preview UI against the live Render database: created account `ACC-432303` (`Production D5 Test 432303`).
+   - Verified automated redirect to `/accounts/2/overview` with accurate balance cards and zero financial calculation performed on the client.
+
+#### Boundary & Invariant Assessment
+
+- **Backend Authority:** Unchanged. All monetary operations, account state transitions, and balance reconstructions remain 100% server-authoritative.
+- **Backend Code & Migrations:** 0 backend files modified.
+- **Frontend Application Source Code:** 0 source files modified; only deployment configuration and environment documentation were changed.
+- **CORS & Preflight Compliance:** Verified against Render backend CORS policy.
+
+#### Completed Deliverables vs. Next Phase
+
+| Milestone / Deliverable | Status | Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | Vercel SPA routing rewrite (`frontend/vercel.json`) | **COMPLETED** (Phase D5) |
+| **COMPLETED NOW** | Production backend API environment (`.env.production`, `.env.example`) | **COMPLETED** (Phase D5) |
+| **COMPLETED NOW** | Frontend typecheck & test suite pass (210/210 tests) | **COMPLETED** (Phase D5) |
+| **COMPLETED NOW** | Production build & secret-exposure audit clean | **COMPLETED** (Phase D5) |
+| **COMPLETED NOW** | Local Vite preview verification against live Render backend | **COMPLETED** (Phase D5) |
+| **COMPLETED NOW** | Live cloud account creation smoke test | **COMPLETED** (Phase D5) |
+| **DEFERRED TO LATER** | Deploy frontend static bundle to Vercel | **Phase D6** |
+| **DEFERRED TO LATER** | Full-stack cloud integration & Playwright E2E verification | **Phase D7** |
+| **DEFERRED TO LATER** | Production hardening, runbooks, and final release tagging | **Phase D8** |
+
+#### Transition to Next Phase
+
+Phase D5 is complete. The frontend static build is fully verified, secrets-clean, and integrated with the live Render backend. The project is ready to proceed to **Phase D6 — Deploy Frontend to Vercel**, which will import the repository in Vercel, configure build settings and environment variables, deploy to Vercel's global edge network, and verify live domain and SSL provisioning.
 
