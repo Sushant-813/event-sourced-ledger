@@ -1984,5 +1984,116 @@ Following the deployment planning and gap analysis in Phase D0, the production m
 
 Phase D1 is complete with zero blockers. The project is ready to proceed to **Phase D2 — Dockerize Spring Boot Backend**, which will introduce the multi-stage `Dockerfile`, `.dockerignore`, dynamic `server.port` binding, and centralized CORS configuration for local container verification.
 
-No git commit has been created; documentation updates remain pending user review.
+---
+
+## 2026-10-01
+
+### Phase D2 — Dockerize Spring Boot Backend: COMPLETED
+
+**Phase:** D2 — Dockerize Spring Boot Backend  
+**Status:** COMPLETED  
+**Date:** 2026-10-01  
+**Baseline:** `v1.1.0` / Phase D1 (`2f808e4`)  
+**Implementation Commit:** `699bd04` (`feat(backend): dockerize backend with dynamic port and cors`)  
+**Purpose:** Package the Spring Boot backend into a hardened, production-ready multi-stage Docker container with dynamic port assignment, property-driven CORS origin configuration, and verify execution and environment variable injection against an isolated database without modifying or contacting the production Render database.
+
+#### What Was Implemented
+
+1. **Multi-Stage Docker Packaging (`backend/Dockerfile`):**
+   - **Builder Stage:** Uses `maven:3.9.9-eclipse-temurin-21-alpine`. Employs layer caching by isolating `pom.xml` dependency pre-fetching (`mvn dependency:go-offline -B`) before source compilation. Builds the fat executable JAR hermetically (`mvn clean package -DskipTests -B`) in 11.885 seconds without requiring an external database connection at image build time.
+   - **Runtime Stage:** Uses `eclipse-temurin:21-jre-alpine` providing the verified OpenJDK 21 LTS runtime.
+   - **Alpine Adoption Note:** During local container execution testing on the host WSL2 Linux engine (`6.6.114.1-microsoft-standard-WSL2`), Ubuntu Jammy base images (`eclipse-temurin:21-jre-jammy`, `ubuntu:22.04`) failed with `exec /bin/sh: exec format error` (exit code 255) due to glibc/binfmt host conflicts. Alpine-based images (`musl` libc) executed natively and reliably with zero kernel conflicts while reducing the total image footprint by more than 50% (396 MB uncompressed, 126 MB compressed). The Alpine JRE 21 image is fully compatible with Render's Linux x86_64 deployment environment.
+   - **Security Hardening (Non-Root Execution):** Creates a dedicated unprivileged system group and user (`ledgergroup:ledgeruser`, UID/GID `10001:10001`). The application runs under `USER ledgeruser` with ownership restricted to `/app/app.jar`.
+   - **Runtime Entrypoint:** Configured with `ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]`.
+
+2. **Docker Context Hygiene (`backend/.dockerignore`):**
+   - Targeted strictly to the `backend/` build context, excluding `target/`, `*.log`, `.idea/`, `*.iml`, `.vscode/`, `.DS_Store`, and `Thumbs.db`.
+   - Leaves essential build inputs (`pom.xml`, `src/`) intact while preventing local caches or secrets from entering Docker build layers.
+
+3. **Dynamic Port Binding (`server.port=${PORT:8080}`):**
+   - Modified `backend/src/main/resources/application.properties` to replace hardcoded `server.port=8080` with `server.port=${PORT:8080}`.
+   - Preserves local development default of `8080` while enabling Render's runtime port injection (or local Docker override) without custom command-line arguments.
+
+4. **Centralized & Configurable CORS Configuration (`CorsConfig.java`):**
+   - Implemented `com.ledger.config.CorsConfig` as a Spring MVC `WebMvcConfigurer` bean.
+   - Bound to property `cors.allowed-origins=${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}`.
+   - Splits comma-separated values, trims whitespace, and ignores empty entries.
+   - Allows HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`, `HEAD`.
+   - Configures `allowedHeaders("*")` and preflight `maxAge(3600)` applying to `/**`.
+   - Avoids hardcoding the future production Vercel domain; production origins will be injected via Render environment variables during Phase D3.
+
+5. **Behavioral CORS Testing (`CorsConfigTest.java`):**
+   - Created `@WebMvcTest`-based behavioral test suite exercising the Spring MVC CORS interceptor chain with a minimal test controller:
+     - Preflight from allowed origin `http://localhost:5173` returns HTTP 200 OK + `Access-Control-Allow-Origin: http://localhost:5173` + allowed methods + max age.
+     - Preflight from secondary allowed origin `http://localhost:3000` returns HTTP 200 OK + `Access-Control-Allow-Origin: http://localhost:3000`.
+     - Preflight from unauthorized origin `http://unauthorized-domain.com` is rejected with HTTP 403 Forbidden and zero allow-origin headers.
+     - Actual request from allowed origin returns HTTP 200 OK + allow-origin header.
+     - Actual request from unauthorized origin is rejected with HTTP 403 Forbidden and zero allow-origin headers.
+
+#### Technical Verification & Validation Gates Passed
+
+1. **Host Maven Build & Test Suite:**
+   - Command: `mvn clean test` in `backend/`
+   - Outcome: `BUILD SUCCESS` (total time: 23.746 s)
+   - Results: **249 tests run, 0 failures, 0 errors, 0 skipped** (all 244 existing domain tests preserved + 5 new CORS behavioral tests passed).
+
+2. **Docker Image Build:**
+   - Image built cleanly from `backend/`: `event-sourced-ledger-backend:latest` (ID: `1eb374fcc12b`).
+   - Image size: 396 MB uncompressed / 126 MB compressed.
+
+3. **Isolated PostgreSQL 18 Verification:**
+   - Verified that the remote Render PostgreSQL database `ledger_db_6isw` was **never contacted** and zero production credentials were used.
+   - Created isolated Docker bridge network `ledger-test-net` and started ephemeral PostgreSQL 18 container `ledger-test-db` (`ledger_test_db`, `ledger_user`, `test_password`).
+   - Started backend container `ledger-backend-test` with runtime-injected environment variables (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`, `PORT=8080`).
+
+4. **Flyway Migration & Hibernate Schema Validation:**
+   - Flyway automatically detected clean schema and applied migrations `V1` through `V5` sequentially, successfully seeding the `SYS-CASH` contra-account (ID 1).
+   - Hibernate schema validation (`spring.jpa.hibernate.ddl-auto=validate`) passed without schema mismatch or mapping errors.
+   - Spring Boot context initialized in 10.42 seconds under active profile `prod`.
+
+5. **Non-Root Execution:**
+   - Confirmed via `docker exec ledger-backend-test id`: UID/GID `10001:10001` (`ledgeruser:ledgergroup`).
+
+6. **Live REST Smoke Testing:**
+   - `GET /v3/api-docs`: Returned valid OpenAPI 3 JSON definition.
+   - `GET /accounts`: Returned empty paged collection (`totalElements: 0`), confirming `SYS-CASH` is strictly isolated.
+   - `POST /accounts`: Successfully created account `DOCKER-TEST-001` (assigned ID `2`).
+   - `GET /accounts`: Confirmed `DOCKER-TEST-001` retrieved from database (`totalElements: 1`).
+
+7. **Dynamic PORT Override Verification:**
+   - Restarted backend container as `ledger-backend-test-port` with `-e PORT=10000 -p 10000:10000`.
+   - Verified Tomcat bound and started on port `10000`: `Tomcat started on port 10000 (http) with context path '/'`.
+   - Verified `http://localhost:10000/accounts` served HTTP 200 with persisted account data.
+
+8. **Live Container CORS Verification:**
+   - `OPTIONS /accounts` with `Origin: http://localhost:5173` returned HTTP 200 + `Access-Control-Allow-Origin: http://localhost:5173`.
+   - `OPTIONS /accounts` with `Origin: http://localhost:3000` returned HTTP 200 + `Access-Control-Allow-Origin: http://localhost:3000`.
+   - `OPTIONS /accounts` with `Origin: http://unauthorized-domain.com` returned HTTP 403 Forbidden with zero allow-origin headers.
+
+9. **Secret Hygiene & Clean Teardown:**
+   - Inspected `docker history event-sourced-ledger-backend`: confirmed only `app.jar` is copied into `/app/`; zero passwords, secrets, or `.env` files baked in.
+   - Cleanly stopped and removed all temporary verification containers (`ledger-backend-test-port`, `ledger-test-db`) and network `ledger-test-net`.
+
+#### Milestone Scope Boundary: Completed vs. Deferred
+
+| Category | Item | Status / Target Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | Backend Dockerfile multi-stage build & .dockerignore | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Dynamic PORT configuration (`server.port=${PORT:8080}`) | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Configurable Spring MVC CORS (`CorsConfig.java`) | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Behavioral CORS unit/slice testing (249 total tests) | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Isolated container verification (PostgreSQL 18 + Flyway V1–V5) | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Non-root container security & secret-hygiene audit | **COMPLETED** (Phase D2) |
+| **COMPLETED NOW** | Implementation committed to main (`699bd04`) | **COMPLETED** (Phase D2) |
+| **DEFERRED TO LATER** | Deploy Dockerized backend Web Service to Render | **Phase D3** |
+| **DEFERRED TO LATER** | Automated Flyway migration execution on Render cloud DB | **Phase D3 / D4** |
+| **DEFERRED TO LATER** | Backend production smoke & invariant verification | **Phase D4** |
+| **DEFERRED TO LATER** | Frontend production config (`VITE_API_BASE_URL`, `vercel.json`) | **Phase D5** |
+| **DEFERRED TO LATER** | Deploy frontend static bundle to Vercel | **Phase D6** |
+| **DEFERRED TO LATER** | Full-stack cloud integration & Playwright E2E verification | **Phase D7** |
+| **DEFERRED TO LATER** | Production hardening, runbooks, and final release tagging | **Phase D8** |
+
+#### Transition to Next Phase
+
+Phase D2 is complete with zero blockers. The backend container packaging, dynamic port binding, and CORS configuration are fully verified and committed. The project is ready to proceed to **Phase D3 — Deploy Backend to Render**, which will configure the Render Web Service referencing the GitHub repository, inject production PostgreSQL credentials, bind `PORT`, configure production CORS allowed origins, and deploy the service live.
 

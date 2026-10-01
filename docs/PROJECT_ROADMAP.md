@@ -17,8 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0 & D1 COMPLETED (2026-09-30)  
-- **Next Phase (Phase D2):** Dockerize Spring Boot Backend (READY FOR EXECUTION)  
+- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D2 COMPLETED (2026-10-01)  
+- **Next Phase (Phase D3):** Deploy Backend to Render (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -746,34 +746,40 @@ Provision and configure the managed PostgreSQL database instance on Render to se
 
 ## Phase D2 — Dockerize Spring Boot Backend
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED — 2026-10-01**
 
 ### Objective
 Containerize the Spring Boot backend using a production-ready multi-stage Docker build and verify local container execution and environment injection.
 
 ### Deliverables & Scope
 - **Dockerfile Creation:** Author a production-appropriate multi-stage `Dockerfile`:
-  - *Builder Stage:* Compile and package the Spring Boot application using Maven and OpenJDK 21.
-  - *Runtime Stage:* Lightweight JRE 21 base image containing only the executable JAR and minimal runtime dependencies.
-- **Docker Ignore Configuration:** Author `.dockerignore` to exclude `target/`, `.git/`, IDE files, test logs, frontend assets, and local documentation.
+  - *Builder Stage:* Compile and package the Spring Boot application using Maven and OpenJDK 21 (`maven:3.9.9-eclipse-temurin-21-alpine`).
+  - *Runtime Stage:* Lightweight Alpine JRE 21 base image (`eclipse-temurin:21-jre-alpine`) running as non-root user `10001:10001` (`ledgeruser:ledgergroup`).
+- **Docker Ignore Configuration:** Author `backend/.dockerignore` to exclude `target/`, local logs, and IDE files from the build context.
+- **Dynamic PORT Configuration:** Update `backend/src/main/resources/application.properties` to support dynamic port injection via `server.port=${PORT:8080}`.
+- **Centralized CORS Configuration:** Author `backend/src/main/java/com/ledger/config/CorsConfig.java` with property-driven origin allowlist (`cors.allowed-origins`) defaulting to local development origins (`http://localhost:5173,http://localhost:3000`).
+- **Behavioral CORS Testing:** Author `backend/src/test/java/com/ledger/config/CorsConfigTest.java` verifying allowed origins, unauthorized origin rejection, and preflight `OPTIONS` handling.
 - **Local Container Build:** Build the Docker image locally (`docker build -t event-sourced-ledger-backend .`).
-- **Local Container Execution:** Run the backend container locally with injected environment variables simulating production configuration.
-- **Environment Variable Injection Verification:** Confirm runtime ingestion of `LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`, and `PORT`.
-- **Application Startup Verification:** Confirm Spring Boot application context initializes cleanly within the container.
-- **Flyway & Hibernate Verification:** Confirm Flyway executes migrations and Hibernate validates the schema (`ddl-auto=validate`) inside the container.
-- **API Availability Check:** Verify REST endpoints respond correctly on the exposed container port.
+- **Isolated PostgreSQL Verification:** Verify container startup, environment variable ingestion (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`), Flyway migrations `V1`–`V5`, Hibernate schema validation (`ddl-auto=validate`), dynamic port override (`PORT=10000`), and live API smoke tests against an ephemeral local PostgreSQL 18 container without contacting the production Render database.
 
-### Verification Gates
-- Multi-stage Docker image builds cleanly with minimal footprint.
-- Container starts cleanly when supplied with environment variables.
-- Flyway migrations run successfully and schema validation passes.
-- Local containerized endpoints serve valid HTTP responses.
+### Verification Gates Passed
+- Host test suite passed with `BUILD SUCCESS` (249 tests run, 0 failures, 0 errors, 0 skipped).
+- Multi-stage Docker image `event-sourced-ledger-backend:latest` compiled cleanly (396 MB uncompressed / 126 MB compressed).
+- Container verified running as unprivileged user `10001:10001` (`ledgeruser`).
+- Container initialized against clean temporary PostgreSQL 18 database with automatic Flyway `V1`–`V5` execution and Hibernate validation pass.
+- Live REST smoke tests verified `/v3/api-docs` and `POST /accounts` / `GET /accounts` persistence.
+- Dynamic port binding verified with `PORT=10000`.
+- Live container CORS preflight verified returning `Access-Control-Allow-Origin: http://localhost:5173` and `http://localhost:3000`, rejecting unauthorized origins with HTTP 403.
+- Secret hygiene confirmed: zero credentials baked in image layers; credentials injected strictly at runtime.
+- Render database `ledger_db_6isw` remained 100% untouched.
+- All temporary Docker containers and bridge network removed.
+- Implementation committed as `699bd04`.
 
 ---
 
 ## Phase D3 — Deploy Backend to Render
 
-**Status: PLANNED**
+**Status: READY FOR EXECUTION**
 
 ### Objective
 Deploy the Dockerized Spring Boot backend to Render as a Web Service connected to the production Render PostgreSQL database.
@@ -943,8 +949,8 @@ Harden production configurations, complete system documentation, establish opera
 | :--- | :--- | :--- | :--- |
 | **MD0** | Deployment Planning & Readiness Audit | COMPLETED (2026-09-30) | Phase D0 |
 | **MD1** | Production PostgreSQL on Render | COMPLETED (2026-09-30) | Phase D1 |
-| **MD2** | Dockerize Spring Boot Backend | READY FOR EXECUTION | Phase D2 |
-| **MD3** | Deploy Dockerized Backend to Render | PLANNED | Phase D3 |
+| **MD2** | Dockerize Spring Boot Backend | COMPLETED (2026-10-01) | Phase D2 |
+| **MD3** | Deploy Dockerized Backend to Render | READY FOR EXECUTION | Phase D3 |
 | **MD4** | Backend Production Verification | PLANNED | Phase D4 |
 | **MD5** | Configure Frontend for Production | PLANNED | Phase D5 |
 | **MD6** | Deploy Frontend Static Bundle to Vercel | PLANNED | Phase D6 |
