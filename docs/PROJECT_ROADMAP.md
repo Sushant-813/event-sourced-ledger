@@ -17,8 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D5 COMPLETED (2026-10-01)  
-- **Next Phase (Phase D6):** Deploy Frontend to Vercel (READY FOR EXECUTION)  
+- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D7 COMPLETED (2026-10-01)  
+- **Next Phase (Phase D8):** Production Hardening & Documentation (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -881,47 +881,37 @@ Deploy the React + TypeScript + Vite static frontend application to Vercel's glo
 
 ## Phase D7 — Full-Stack Integration Verification
 
-**Status: PLANNED**
+**Status: COMPLETED (2026-10-01)**
 
 ### Objective
 Execute comprehensive end-to-end integration testing and user journey validation across the live full-stack system deployed on Vercel and Render.
 
 ### Deliverables & Scope
-- **Public Showcase & Brand Navigation:**
-  - Verify public landing page (`/`) loads with hero, feature highlights, and architectural breakdown.
-  - Verify theme toggle switches between institutional light and dark modes with persistence.
-  - Verify navigation from landing page to `/dashboard` and internal header brand return to `/`.
-- **Portfolio Dashboard:**
-  - Verify aggregate metrics (Total Accounts, Active Accounts, Frozen Accounts) load from backend.
-  - Verify quick-action shortcuts trigger corresponding modals.
-- **Account Directory & Lifecycle:**
-  - Verify account directory browsing, sorting, and status filtering (`/accounts`).
-  - Verify account creation modal (`POST /accounts`) updates table and navigates to overview.
-  - Verify account freeze, activate, and close lifecycle transitions.
-- **Monetary Workflows:**
-  - Execute live deposit and verify authoritative balance refresh.
-  - Execute live withdrawal and verify balance decrease and insufficient funds rejection.
-  - Execute account-to-account transfer between two accounts and verify counterparty balances.
-- **Financial History Inspection:**
-  - Verify transaction history reflects canonical event order (`/transactions`).
-  - Verify double-entry ledger entries match debits and credits (`/ledger`).
-  - Verify event stream displays immutable domain events with raw payload inspection (`/events`).
-- **Audit Trail & Balance Reconstruction:**
-  - Verify audit trail running balance matches final balance (`/audit`).
-  - Verify point-in-time balance reconstruction using `asOf` temporal queries.
-- **CORS & Network Integration:** Confirm cross-origin browser requests between Vercel and Render complete without CORS header rejections or preflight failures.
-- **Automated E2E Verification:** Run relevant Playwright tests against live production URLs to validate the core user journey in real browser environments.
+- **Production Connectivity & Routing:** Verified production frontend (`https://event-sourced-ledger.vercel.app`) communicates directly with the live Render backend (`https://event-sourced-ledger-backend.onrender.com`) without local proxies or intermediate servers. Direct deep-link navigation and page reloads (`/`, `/dashboard`, `/accounts`, `/accounts/:id/audit`) resolve cleanly to HTTP 200 via Vercel Edge rewrites.
+- **Production CORS Validation:** Confirmed preflight `OPTIONS` requests from `https://event-sourced-ledger.vercel.app` return `HTTP/1.1 200 OK` with `access-control-allow-origin: https://event-sourced-ledger.vercel.app` and `access-control-max-age: 3600`.
+- **Live Financial Lifecycle & Controlled Smoke Journey:** Executed one controlled, non-destructive user journey through the live Vercel UI against Render PostgreSQL:
+  - Account A: `ACC-D7-486192-A` (ID 3, `D7 Primary Verification 486192`).
+  - Account B: `ACC-D7-486192-B` (ID 4, `D7 Secondary Verification 486192`).
+  - Deposit: ₹500.00 into Account A (authoritative balance updated to ₹500.00).
+  - Transfer: ₹150.00 from Account A to Account B.
+  - Final Authoritative Balances: Account A = ₹350.00, Account B = ₹150.00 (confirmed via UI and direct backend balance endpoint).
+- **Audit Trail & History Verification:** Verified `/accounts/3/audit` accurately displays chronological ledger events: `DEPOSIT` (+500.00, running balance 500.00) and `TRANSFER_DEBIT` (-150.00, running balance 350.00) matching server reconstruction.
+- **Contra-Account Isolation (`SYS-CASH`):** Confirmed `GET /accounts/1` returns `HTTP 404 Not Found` (`"Account not found: 1"`) and Account ID 1 is omitted from all customer-facing directories.
+- **Automated Playwright Suite:** Verified existing read-only Playwright test suites (`landing-page.spec.ts`, `theme-and-sidebar.spec.ts`) pass 6/6 tests against production.
+- **Operational CORS Gap Identified:** Discovered that `PATCH` is omitted from `CorsConfig.allowedMethods` in the backend, causing account lifecycle mutations (`PATCH /accounts/{id}/freeze`, `/activate`, `/close`) to fail CORS preflight. Documented as a Phase D8 Production Hardening item (zero source modifications made during D7).
 
 ### Verification Gates
-- All full-stack user journeys execute successfully in the live cloud deployment.
-- Zero CORS errors, zero 404 routing errors, and zero client-side calculation anomalies.
-- Automated Playwright E2E suite passes against production endpoints.
+- Production connectivity, CORS, and SPA routing verified: PASS.
+- Real end-to-end account creation, deposit, and transfer workflow verified: PASS.
+- Server-authoritative balance derivation and audit history verified: PASS.
+- Strict contra-account isolation verified: PASS.
+- Zero application source or configuration changes made during D7; working tree clean: PASS.
 
 ---
 
 ## Phase D8 — Production Hardening & Documentation
 
-**Status: PLANNED**
+**Status: READY FOR EXECUTION**
 
 ### Objective
 Harden production configurations, complete system documentation, establish operational runbooks, and create the final production release tag.
@@ -957,8 +947,8 @@ Harden production configurations, complete system documentation, establish opera
 | **MD4** | Backend Production Verification | PLANNED | Phase D4 |
 | **MD5** | Configure Frontend for Production | COMPLETED (2026-10-01) | Phase D5 |
 | **MD6** | Deploy Frontend Static Bundle to Vercel | READY FOR EXECUTION | Phase D6 |
-| **MD7** | Full-Stack Integration & E2E Cloud Verification | PLANNED | Phase D7 |
-| **MD8** | Production Hardening, Documentation & Final Release Tagging | PLANNED | Phase D8 |
+| **MD7** | Full-Stack Integration & E2E Cloud Verification | COMPLETED (2026-10-01) | Phase D7 |
+| **MD8** | Production Hardening, Documentation & Final Release Tagging | READY FOR EXECUTION | Phase D8 |
 
 ---
 

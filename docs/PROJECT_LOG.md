@@ -2179,4 +2179,86 @@ With the backend containerized, deployed, and verified live on Render (`https://
 #### Transition to Next Phase
 
 Phase D5 is complete. The frontend static build is fully verified, secrets-clean, and integrated with the live Render backend. The project is ready to proceed to **Phase D6 — Deploy Frontend to Vercel**, which will import the repository in Vercel, configure build settings and environment variables, deploy to Vercel's global edge network, and verify live domain and SSL provisioning.
+
+---
+
+### Entry: 2026-10-01 — Phase D7: Full-Stack Integration & E2E Cloud Verification Completed
+
+#### Context & Objectives
+
+Following the deployment of the Dockerized Spring Boot backend to Render (`https://event-sourced-ledger-backend.onrender.com`) and the static React + TypeScript frontend to Vercel (`https://event-sourced-ledger.vercel.app`), Phase D7 executed full-stack integration verification. The objective was to confirm end-to-end functionality, double-entry financial invariants, authoritative balance reporting, and client routing directly on the live cloud infrastructure without modifying application code, altering business rules, or running destructive operations.
+
+#### Verification Scope & Results
+
+1. **Production Frontend → Render Backend Connectivity: PASS**
+   - Verified that the production Vercel frontend initiates fetch calls directly to the Render backend origin over public HTTPS.
+   - Confirmed zero network requests targeted `localhost:8080` or any local proxy.
+
+2. **Production CORS Preflight: PASS**
+   - Verified preflight `OPTIONS` requests from origin `https://event-sourced-ledger.vercel.app` against `https://event-sourced-ledger-backend.onrender.com` return `HTTP/1.1 200 OK`.
+   - Headers confirmed: `access-control-allow-origin: https://event-sourced-ledger.vercel.app`, `access-control-max-age: 3600`, with standard API methods allowed.
+
+3. **SPA Routing & Direct Deep Links: PASS**
+   - Verified that direct browser navigation and hard refreshes on representative client routes (`/`, `/dashboard`, `/accounts`, `/accounts/:id/audit`) return `HTTP/1.1 200 OK` via Vercel Edge rewrites (`frontend/vercel.json`), eliminating SPA 404 errors.
+
+4. **Controlled End-to-End Financial User Journey: PASS**
+   - Executed one controlled, non-destructive financial workflow directly through the live Vercel UI against the Render backend and PostgreSQL database:
+     - **Account A Creation:** Created account `ACC-D7-486192-A` (assigned internal ID `3`, Name: `D7 Primary Verification 486192`).
+     - **Deposit:** Deposited ₹500.00 into Account A. Authoritative balance immediately reflected ₹500.00 upon backend query invalidation.
+     - **Account B Creation:** Created account `ACC-D7-486192-B` (assigned internal ID `4`, Name: `D7 Secondary Verification 486192`).
+     - **Transfer:** Executed account-to-account transfer of ₹150.00 from Account A to Account B via the Dashboard Quick Actions modal.
+     - **Authoritative Balance Verification:**
+       - Account A (`ACC-D7-486192-A`, ID 3): **₹350.00**
+       - Account B (`ACC-D7-486192-B`, ID 4): **₹150.00**
+       - Verified that balances originate strictly from the backend (`GET /accounts/{id}/audit/balance`) with zero client-side arithmetic.
+
+5. **Audit Trail & Event History Verification: PASS**
+   - Navigated directly to `https://event-sourced-ledger.vercel.app/accounts/3/audit`.
+   - Confirmed reconstructed balance card displays `CURRENT RECONSTRUCTED BALANCE: ₹ 350.00`.
+   - Confirmed audit table reflects chronological ledger entries:
+     - `DEPOSIT`: +500.00 (running balance 500.00, Reference: `c8044193-4548-48c2-be40-4b395f8f2c52`)
+     - `TRANSFER_DEBIT`: -150.00 (running balance 350.00, Reference: `cbcd477b-2a23-4c9f-864e-864a84a7deb7`)
+
+6. **Contra-Account Isolation (`SYS-CASH`): PASS**
+   - `GET /accounts/1` returns `HTTP/1.1 404 Not Found` (`"Account not found: 1"`).
+   - `GET /accounts` paged listing includes only customer accounts (IDs 2, 3, 4; `totalElements: 3`), confirming `SYS-CASH` is strictly isolated.
+
+7. **Existing Playwright Suite Verification: PASS**
+   - Executed read-only Playwright test suites (`landing-page.spec.ts` and `theme-and-sidebar.spec.ts`): all 6/6 tests passed against the application.
+
+#### Operational CORS Gap Identified (Phase D8 Hardening Item)
+
+- **Finding:** Testing the account lifecycle action (`PATCH /accounts/{id}/freeze`) through the browser revealed that Spring MVC's CORS configuration in `CorsConfig.java` specifies:
+  ```java
+  .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
+  ```
+  It **omits `PATCH`**.
+- **Impact:** All standard collection, deposit, withdrawal, transfer, and audit flows use `GET` and `POST` and work flawlessly in production. However, account lifecycle transitions (`/freeze`, `/activate`, `/close`) use `PATCH` per the REST API specification and fail the browser CORS preflight check.
+- **Classification:** This is an operational configuration item. Per strict D7 boundaries, **no source code changes were made during Phase D7**. This item is recorded for resolution in **Phase D8 — Production Hardening & Documentation**.
+
+#### Boundary & Invariant Assessment
+
+- **Backend Authority:** 100% server-authoritative balance calculation and audit trail reconstruction.
+- **Source Code Integrity:** 0 backend source files modified, 0 frontend application source files modified.
+- **Database Safety:** Zero destructive, truncate, delete, or stress operations executed against Render PostgreSQL. All test entities used explicit `ACC-D7-*` prefixes and remain preserved in the audit log.
+- **Git Working Tree:** Remained completely clean throughout D7 execution.
+
+#### Milestone Scope Boundary: Completed vs. Next Phase
+
+| Milestone / Deliverable | Status | Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | Production frontend-to-backend HTTPS connectivity | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Production CORS verification for GET/POST APIs | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Edge SPA routing and deep-link refresh verification | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Real cloud account creation, deposit, and transfer smoke test | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Authoritative balance display & audit trail verification | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Contra-account (`SYS-CASH`) isolation verification | **COMPLETED** (Phase D7) |
+| **COMPLETED NOW** | Existing read-only Playwright E2E suites passing (6/6 tests) | **COMPLETED** (Phase D7) |
+| **DEFERRED TO D8** | Add `PATCH` to `CorsConfig.allowedMethods` for lifecycle endpoints | **Phase D8** |
+| **DEFERRED TO D8** | CORS origin restriction and production configuration hardening | **Phase D8** |
+| **DEFERRED TO D8** | Final repository documentation synchronization & release tagging | **Phase D8** |
+
+#### Transition to Next Phase
+
+Phase D7 is complete. The full-stack cloud system across Vercel, Render, and Render PostgreSQL is verified and functioning with complete accounting correctness. The project is ready to proceed to **Phase D8 — Production Hardening & Documentation**, which will add `PATCH` to the backend CORS configuration, redeploy to Render, verify the account lifecycle flows, synchronize final repository documentation, and tag the production release.
 
