@@ -2261,4 +2261,98 @@ Following the deployment of the Dockerized Spring Boot backend to Render (`https
 #### Transition to Next Phase
 
 Phase D7 is complete. The full-stack cloud system across Vercel, Render, and Render PostgreSQL is verified and functioning with complete accounting correctness. The project is ready to proceed to **Phase D8 — Production Hardening & Documentation**, which will add `PATCH` to the backend CORS configuration, redeploy to Render, verify the account lifecycle flows, synchronize final repository documentation, and tag the production release.
+
+---
+
+### Entry: 2026-10-03 — Phase D8: Production Hardening & Documentation Completed
+
+#### Context & Objectives
+
+Following the successful full-stack cloud integration and E2E verification across Vercel and Render in Phase D7, Phase D8 executed production hardening, resolved the operational CORS gap for account lifecycle endpoints, completed full test verification, confirmed live production operations, and performed comprehensive repository documentation synchronization.
+
+#### Implementation Scope & Hardening
+
+1. **Resolution of CORS Gap for Account Lifecycle Endpoints (`CorsConfig.java`):**
+   - **Finding from Phase D7:** The REST API defines account lifecycle state transitions as:
+     - `PATCH /accounts/{id}/freeze`
+     - `PATCH /accounts/{id}/activate`
+     - `PATCH /accounts/{id}/close`
+     In `CorsConfig.java`, `allowedMethods` was configured as:
+     `"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"`, which omitted `PATCH`.
+   - **Root Cause Analysis:** Browser cross-origin preflight checks (`OPTIONS` with `Access-Control-Request-Method: PATCH`) were rejected by Spring MVC's `DefaultCorsProcessor` with `HTTP 403 Forbidden` and zero allow-origin headers because `PATCH` was missing from the allowlist.
+   - **Resolution:** Modified `backend/src/main/java/com/ledger/config/CorsConfig.java` to explicitly include `PATCH` in `allowedMethods`:
+     ```java
+     .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
+     ```
+   - **Zero Side-Effects:** Preserved existing origin allowlists, wildcard headers, and `maxAge(3600)` caching.
+
+2. **Automated Behavioral CORS Test Suite Expansion (`CorsConfigTest.java`):**
+   - Extended `TestCorsController` with `@PatchMapping("/test-cors")` returning `"patched"`.
+   - Added `corsPreflight_patchMethod_returnsOkAndHeaders`: verifies `OPTIONS` request with `Access-Control-Request-Method: PATCH` returns HTTP 200, `Access-Control-Allow-Origin: http://localhost:5173`, `Access-Control-Allow-Methods` containing `PATCH`, and `Access-Control-Max-Age: 3600`.
+   - Added `corsActualRequest_patchMethod_returnsAllowOriginHeader`: verifies actual `PATCH` request returns HTTP 200, body `"patched"`, and `Access-Control-Allow-Origin: http://localhost:5173`.
+   - Suite verified: All 251 tests passed cleanly with zero failures (`mvn clean test`).
+
+3. **Render Backend Redeployment & Container Verification:**
+   - Deployed updated Dockerized Spring Boot backend to Render.
+   - Verified clean Alpine JRE container startup under `prod` Spring profile with zero errors.
+   - Verified steady connection pooling to Render PostgreSQL (`ledger_db_6isw`) and dynamic port binding via `server.port=${PORT:8080}`.
+
+4. **Live Production Preflight Verification (Curl):**
+   - Executed live preflight query against production Render backend:
+     `OPTIONS /accounts/3/freeze` with `Origin: https://event-sourced-ledger.vercel.app` and `Access-Control-Request-Method: PATCH`.
+   - Verified response: `HTTP/1.1 200 OK`, `Access-Control-Allow-Origin: https://event-sourced-ledger.vercel.app`, `Access-Control-Allow-Methods` contains `PATCH`, and `Access-Control-Max-Age: 3600`.
+
+5. **Live Production Account Lifecycle Verification (Vercel UI):**
+   - Navigated to `https://event-sourced-ledger.vercel.app/accounts/3/overview` (`ACC-D7-486192-A`).
+   - Triggered **Freeze Account** through UI confirmation dialog:
+     - Request: `PATCH https://event-sourced-ledger-backend.onrender.com/accounts/3/freeze`
+     - Result: HTTP 200 OK. Account status transitioned to `FROZEN`. UI banner and badge immediately reflected frozen state.
+   - Triggered **Activate Account** through UI confirmation dialog:
+     - Request: `PATCH https://event-sourced-ledger-backend.onrender.com/accounts/3/activate`
+     - Result: HTTP 200 OK. Account status transitioned to `ACTIVE`. UI controls and action buttons re-enabled.
+   - Verified `/dashboard` metrics dynamically updated active and frozen counts in real time.
+   - Confirmed zero CORS errors in browser network logs.
+
+6. **Frontend Non-Modification Confirmation:**
+   - Zero frontend application source code or build configuration changes were required. The frontend's use of standard `PATCH` requests strictly adheres to the frozen REST API contract.
+
+7. **Production Documentation Synchronization:**
+   - Added **ADR-038** in `docs/DECISIONS.md` documenting the rationale and consequences of CORS `PATCH` method support.
+   - Added Section 19 in `docs/ARCHITECTURE.md` documenting the live production cloud topology (Vercel + Render + Render PostgreSQL), CORS security boundary, and environment variable segregation.
+   - Synchronized `docs/PROJECT_ROADMAP.md` marking Phases D0–D8 completed and aligning all milestone tables.
+   - Updated `README.md` reflecting completed full-stack production deployment, live URLs, and cloud architecture.
+
+#### Technical Verification & Validation Gates Passed
+
+1. **Host Maven Build & Test Suite:**
+   - Command: `mvn clean test` in `backend/`
+   - Outcome: `BUILD SUCCESS` (Duration: 24.908 s)
+   - Results: **251 tests run, 0 failures, 0 errors, 0 skipped** (all 249 existing domain & CORS tests preserved + 2 new `PATCH` tests passed).
+
+2. **Render Production Health:**
+   - Container running cleanly with non-root security (`ledgeruser:ledgergroup`, UID/GID `10001:10001`).
+   - Clean application logs; zero unhandled exceptions.
+
+3. **Live Cross-Origin Invariant Safety:**
+   - Account state transitions preserve double-entry invariants and historical event log entries.
+   - Server authority strictly maintained across all operations.
+
+#### Milestone Scope Boundary: Completed vs. Final Release
+
+| Milestone / Deliverable | Status | Phase |
+| :--- | :--- | :--- |
+| **COMPLETED NOW** | `PATCH` added to `CorsConfig.allowedMethods` | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Automated behavioral CORS test suite expanded (251 tests) | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Dockerized backend redeployed to Render | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Live CORS preflight verified with `PATCH` support | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Production Freeze → Activate lifecycle verified via Vercel UI | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Zero frontend source modifications confirmed | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | Architectural Decision Record ADR-038 recorded | **COMPLETED** (Phase D8) |
+| **COMPLETED NOW** | System architecture, roadmap, log, and README synchronized | **COMPLETED** (Phase D8) |
+| **NEXT ACTION** | Tag and publish final production release (`v1.2.0`) | **Final Release** |
+
+#### Transition to Final Production Release
+
+With Phase D8 complete, all nine deployment phases (D0–D8) are fully executed, verified, and documented. The live cloud system across Vercel, Render, and Render PostgreSQL is fully operational, hardened, and synchronized. The project is ready for the final step: creating and pushing the formal production release tag.
+
 

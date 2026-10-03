@@ -17,8 +17,8 @@
   - Public Product Landing Page (`/`) with Dedicated Public Layout  
   - Internal Application Header Brand Navigation to Landing Page (`/`)  
 - **Full-Stack Source Checkpoint (`v1.1.0`):** COMPLETED & TAGGED (2026-09-30)  
-- **Production Deployment Roadmap (Phases D0–D8):** IN PROGRESS — Phases D0–D7 COMPLETED (2026-10-01)  
-- **Next Phase (Phase D8):** Production Hardening & Documentation (READY FOR EXECUTION)  
+- **Production Deployment Roadmap (Phases D0–D8):** COMPLETED (2026-10-03)  
+- **Next Action:** Final Production Release Tagging (READY FOR EXECUTION)  
 - **Future Enhancements:** DEFERRED / POST-DEPLOYMENT  
 
 ---
@@ -62,7 +62,7 @@ The project adheres to these core architectural and execution principles:
 - **Frontend Implementation**: Phase F0 (Frontend Foundation) COMPLETED (2026-09-23); Phase F1 (Account Experience) COMPLETED (2026-09-23); Phase F2 (Monetary Operations) COMPLETED (2026-09-27); Phase F3 (Financial History) COMPLETED (2026-09-28); Phase F4 (Audit Experience) COMPLETED (2026-09-29); Phase F5 (Dashboard & Release Readiness) COMPLETED (2026-09-30).
 - **Post-F5 Frontend Enhancements**: Collapsible desktop sidebar, application-wide dark mode, public product landing page at `/`, and internal application header brand navigation to `/` (**COMPLETED 2026-09-30**).
 - **Full-Stack Source Checkpoint**: Complete pre-deployment full-stack codebase tagged and pushed as `v1.1.0` (**COMPLETED 2026-09-30**).
-- **Production Deployment (Phases D0–D8)**: Production cloud deployment to Render (PostgreSQL database & Dockerized Spring Boot backend) and Vercel (React + TypeScript + Vite frontend) (**READY FOR EXECUTION**).
+- **Production Deployment (Phases D0–D8)**: Production cloud deployment to Render (PostgreSQL database & Dockerized Spring Boot backend) and Vercel (React + TypeScript + Vite frontend) (**COMPLETED 2026-10-03**).
 
 ### 3.2 What is Intentionally Deferred (Post-v1.0 / Post-Deployment)
 - User authentication and Role-Based Access Control (RBAC).
@@ -779,7 +779,7 @@ Containerize the Spring Boot backend using a production-ready multi-stage Docker
 
 ## Phase D3 — Deploy Backend to Render
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED (2026-10-01)**
 
 ### Objective
 Deploy the Dockerized Spring Boot backend to Render as a Web Service connected to the production Render PostgreSQL database.
@@ -805,7 +805,7 @@ Deploy the Dockerized Spring Boot backend to Render as a Web Service connected t
 
 ## Phase D4 — Backend Production Verification
 
-**Status: PLANNED**
+**Status: COMPLETED (2026-10-01)**
 
 ### Objective
 Conduct rigorous functional and architectural verification of the deployed Render backend to confirm stability, invariant safety, and production readiness before initiating frontend deployment.
@@ -859,7 +859,7 @@ Configure the React + TypeScript + Vite frontend for production deployment targe
 
 ## Phase D6 — Deploy Frontend to Vercel
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED (2026-10-01)**
 
 ### Objective
 Deploy the React + TypeScript + Vite static frontend application to Vercel's global edge network.
@@ -911,28 +911,29 @@ Execute comprehensive end-to-end integration testing and user journey validation
 
 ## Phase D8 — Production Hardening & Documentation
 
-**Status: READY FOR EXECUTION**
+**Status: COMPLETED (2026-10-03)**
 
 ### Objective
-Harden production configurations, complete system documentation, establish operational runbooks, and create the final production release tag.
+Harden production configurations, complete system documentation, establish operational runbooks, and prepare for final production release tagging.
 
-### Deliverables & Scope
-- **CORS Hardening:** Restrict Render backend CORS allowed origins strictly to the production Vercel domain (eliminating wildcard or broad origins).
-- **Environment & Secret Hygiene:** Conduct a final review of environment variables and access controls on Render and Vercel dashboards.
-- **Production Logging Audit:** Confirm production logs capture operational metrics while omitting sensitive customer data or credentials.
-- **Security & HTTPS Verification:** Confirm all communications are strictly encrypted over HTTPS and database connections enforce SSL.
-- **Architecture Documentation:** Update system architecture documentation reflecting the live Render + Vercel deployment topology.
-- **Documentation Synchronization:**
-  - Update `README.md` with live production URLs, cloud deployment architecture, and environment configuration instructions.
-  - Update `PROJECT_LOG.md` recording the complete chronological deployment milestone.
-  - Update `docs/PROJECT_ROADMAP.md` recording phase completion statuses, verification dates, and test metrics.
-- **Architectural Decision Records (ADRs):** Record any deployment-specific decisions in `docs/DECISIONS.md`.
-- **Final Production Release:** Decide, tag, and publish the final production release Git tag following verified end-to-end stability.
+### Deliverables & Scope Completed
+- **CORS Hardening:** Added `PATCH` to `CorsConfig.allowedMethods` allowing account lifecycle mutations (`PATCH /accounts/{id}/freeze`, `/activate`, `/close`) to pass cross-origin preflight checks from the production Vercel origin.
+- **Automated Behavioral CORS Testing:** Extended `CorsConfigTest` with 2 new tests verifying preflight `OPTIONS` with `Access-Control-Request-Method: PATCH` and actual cross-origin `PATCH` requests; full backend suite expanded to 251 tests.
+- **Environment & Secret Hygiene:** Confirmed complete isolation between public build-time frontend variables (`VITE_API_BASE_URL`) and private backend runtime variables (`LEDGER_DB_URL`, `LEDGER_DB_USERNAME`, `LEDGER_DB_PASSWORD`, `PORT`, `CORS_ALLOWED_ORIGINS`). Zero credentials committed or leaked into client bundles.
+- **Production Logging Audit:** Verified `logback-spring.xml` production profile suppresses SQL output and framework verbosity while logging operational events without credential exposure.
+- **Security & HTTPS Verification:** Verified end-to-end TLS encryption across public HTTPS endpoints and secure JDBC connection pooling (`sslmode=require`).
+- **Live Production Lifecycle Verification:** Executed live account freeze and activation lifecycle workflow (`ACC-D7-486192-A`) via the production Vercel UI against Render backend; verified status transitions from `ACTIVE` to `FROZEN` to `ACTIVE` with zero console or network CORS errors.
+- **Architecture & Decision Documentation:**
+  - Recorded ADR-038 in `docs/DECISIONS.md`.
+  - Added Section 19 to `docs/ARCHITECTURE.md` detailing the production topology, CORS boundary, and secret separation.
+- **Documentation Synchronization:** Synchronized `README.md`, `PROJECT_LOG.md`, and `docs/PROJECT_ROADMAP.md` reflecting full-stack deployment completion and live URLs.
 
-### Verification Gates
-- Production environment hardened, secured, and validated.
-- All repository documentation synchronized with the live production deployment.
-- Final production release tag created and published.
+### Verification Gates Passed
+- **Backend Test Suite:** `mvn clean test` in `backend/` passes **251/251 tests** with 0 failures and 0 errors.
+- **Production Preflight Verification:** `OPTIONS` requests from `https://event-sourced-ledger.vercel.app` return `HTTP/1.1 200 OK` with `Access-Control-Allow-Methods` containing `PATCH`.
+- **Live End-to-End Account Lifecycle:** Successfully executed freeze and activate operations through the production UI with real-time state synchronization.
+- **Zero Frontend Source Changes:** Verified backend contract fixes resolved the issue with zero alterations to frontend code.
+- **Repository Documentation Integrity:** All architectural and tracking documentation fully synchronized.
 
 ---
 
@@ -943,12 +944,12 @@ Harden production configurations, complete system documentation, establish opera
 | **MD0** | Deployment Planning & Readiness Audit | COMPLETED (2026-09-30) | Phase D0 |
 | **MD1** | Production PostgreSQL on Render | COMPLETED (2026-09-30) | Phase D1 |
 | **MD2** | Dockerize Spring Boot Backend | COMPLETED (2026-10-01) | Phase D2 |
-| **MD3** | Deploy Dockerized Backend to Render | READY FOR EXECUTION | Phase D3 |
-| **MD4** | Backend Production Verification | PLANNED | Phase D4 |
+| **MD3** | Deploy Dockerized Backend to Render | COMPLETED (2026-10-01) | Phase D3 |
+| **MD4** | Backend Production Verification | COMPLETED (2026-10-01) | Phase D4 |
 | **MD5** | Configure Frontend for Production | COMPLETED (2026-10-01) | Phase D5 |
-| **MD6** | Deploy Frontend Static Bundle to Vercel | READY FOR EXECUTION | Phase D6 |
+| **MD6** | Deploy Frontend Static Bundle to Vercel | COMPLETED (2026-10-01) | Phase D6 |
 | **MD7** | Full-Stack Integration & E2E Cloud Verification | COMPLETED (2026-10-01) | Phase D7 |
-| **MD8** | Production Hardening, Documentation & Final Release Tagging | READY FOR EXECUTION | Phase D8 |
+| **MD8** | Production Hardening & Documentation | COMPLETED (2026-10-03) | Phase D8 |
 
 ---
 

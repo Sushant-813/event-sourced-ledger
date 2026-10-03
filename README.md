@@ -15,6 +15,11 @@ calculations or balance reconstruction.
 > - **Backend v1.0.0:** Complete and verified (Phases 0–10).
 > - **Frontend Implementation (Phases F0–F5):** Complete and verified (2026-09-30).
 > - **Post-F5 Frontend Polish:** Collapsible sidebar, dark mode, public landing page, and brand navigation complete (2026-09-30).
+> - **Production Cloud Deployment (Phases D0–D8):** Complete and verified live on Vercel and Render (2026-10-03).
+>
+> **Live Production Deployments:**
+> - **Frontend Web Application:** [https://event-sourced-ledger.vercel.app](https://event-sourced-ledger.vercel.app)
+> - **Backend API & Swagger Documentation:** [https://event-sourced-ledger-backend.onrender.com/swagger-ui.html](https://event-sourced-ledger-backend.onrender.com/swagger-ui.html)
 >
 > See the [Project Roadmap](docs/PROJECT_ROADMAP.md) and [Current Status](#current-status).
 
@@ -41,7 +46,7 @@ calculations or balance reconstruction.
 ### Frontend (Phases F0–F5 & Post-F5 Enhancements Complete)
 
 | Phase | Description | Status | Target |
-|-------|-------------|--------|--------|
+|---|---|---|---|
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
@@ -49,6 +54,54 @@ calculations or balance reconstruction.
 | Phase F4 | Audit Trail & Balance Reconstruction Views | **COMPLETED** (2026-09-29) | Reconstructed Timeline & Trail |
 | Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **COMPLETED** (2026-09-30) | Final Polish & Production Readiness |
 | Post-F5 | Collapsible Sidebar, Dark Mode, Public Landing Page & Brand Nav | **COMPLETED** (2026-09-30) | Workspace Polish & Architectural Showcase |
+
+### Production Deployment (Phases D0–D8 Complete)
+
+| Phase | Description | Status | Target |
+|---|---|---|---|
+| Phase D0 | Deployment Planning & Readiness Audit | **COMPLETED** (2026-09-30) | Cloud Architecture & Secret Boundaries |
+| Phase D1 | Production PostgreSQL on Render | **COMPLETED** (2026-09-30) | Managed Cloud Database |
+| Phase D2 | Dockerize Spring Boot Backend | **COMPLETED** (2026-10-01) | Multi-Stage Non-Root Alpine Container |
+| Phase D3 | Deploy Backend to Render | **COMPLETED** (2026-10-01) | Managed Web Service & JDBC Link |
+| Phase D4 | Backend Production Verification | **COMPLETED** (2026-10-01) | Cloud Invariant & API Verification |
+| Phase D5 | Configure Frontend for Production | **COMPLETED** (2026-10-01) | Vercel SPA Fallback & API Wiring |
+| Phase D6 | Deploy Frontend to Vercel | **COMPLETED** (2026-10-01) | Edge Static Distribution & SSL |
+| Phase D7 | Full-Stack Integration Verification | **COMPLETED** (2026-10-01) | Live Cloud User Journey Smoke Test |
+| Phase D8 | Production Hardening & Documentation | **COMPLETED** (2026-10-03) | CORS PATCH Hardening & Doc Sync |
+
+### Production Cloud Architecture
+
+```text
+   Users & Browsers
+          │
+          ▼
+   Vercel Global Edge Network
+   React 19 / TypeScript / Vite Single-Page Application
+   - Deployed at: https://event-sourced-ledger.vercel.app
+   - Edge SPA routing rewrites (vercel.json)
+   - Zero client-side balance calculations
+          │
+          │ HTTPS REST (TLS)
+          │ CORS Preflight & Allowlist
+          ▼
+   Render Cloud Platform
+   Dockerized Spring Boot 3.5.16 / Java 21 LTS
+   - Deployed at: https://event-sourced-ledger-backend.onrender.com
+   - Alpine JRE runtime running as unprivileged user (10001:10001)
+   - Dynamic port binding (${PORT:8080})
+   - Centralized Spring MVC CORS policy (PATCH supported)
+   - Authoritative source of financial truth
+          │
+          │ JDBC over SSL (sslmode=require)
+          │ Pessimistic Row Locking
+          ▼
+   Render Cloud Platform
+   Managed PostgreSQL Database
+   - Durable ACID relational persistence
+   - Append-only event store & double-entry ledger entries
+   - Flyway automated schema migrations (V1–V5)
+   - Hibernate schema validation (ddl-auto=validate)
+```
 
 ### Phase 1 — Account Module (completed)
 
@@ -767,8 +820,8 @@ event-sourced-ledger/
 | [Database Design](docs/DATABASE_DESIGN.md) | Schema design, entities, constraints, and migration strategy |
 | [API Guidelines](docs/API_GUIDELINES.md) | REST conventions, request/response format, and error handling |
 | [Coding Standards](docs/CODING_STANDARDS.md) | Code style, structure, and implementation guidelines |
-| [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones (Phases 0–10 & F0–F5) |
-| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-030) |
+| [Project Roadmap](docs/PROJECT_ROADMAP.md) | Phased implementation plan and milestones (Phases 0–10, F0–F5, D0–D8) |
+| [Architecture Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADR-001 through ADR-038) |
 | [Project Log](docs/PROJECT_LOG.md) | Chronological record of completed milestones |
 
 ---
@@ -791,16 +844,31 @@ event-sourced-ledger/
 | Phase 9 | Testing & Hardening | **COMPLETED** (2026-09-21) |
 | Phase 10 | Backend v1.0 Release | **COMPLETED** (2026-09-21) |
 
-### Frontend (Phased Implementation In Progress)
+### Frontend (Phases F0–F5 & Post-F5 Enhancements Complete)
 
 | Phase | Description | Status | Target |
-|-------|-------------|--------|--------|
+|---|---|---|---|
 | Phase F0 | Frontend Foundation | **COMPLETED** (2026-09-23) | Foundation Shell & Tooling |
 | Phase F1 | Account Directory, Overview, Creation & Lifecycle | **COMPLETED** (2026-09-23) | Account Management UI |
 | Phase F2 | Deposit, Withdrawal & Transfer Workflows | **COMPLETED** (2026-09-27) | Transaction Forms & Modals |
 | Phase F3 | Transactions, Ledger Entries & Event Stream History | **COMPLETED** (2026-09-28) | History & Journal Tables |
 | Phase F4 | Audit Trail & Balance Reconstruction Views | **COMPLETED** (2026-09-29) | Reconstructed Timeline & Trail |
-| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **UPCOMING** (Next) | Final Polish & Production Readiness |
+| Phase F5 | Dashboard Metrics, Polish & Frontend Release Readiness | **COMPLETED** (2026-09-30) | Final Polish & Production Readiness |
+| Post-F5 | Collapsible Sidebar, Dark Mode, Public Landing Page & Brand Nav | **COMPLETED** (2026-09-30) | Workspace Polish & Architectural Showcase |
+
+### Production Deployment (Phases D0–D8 Complete)
+
+| Phase | Description | Status | Target |
+|---|---|---|---|
+| Phase D0 | Deployment Planning & Readiness Audit | **COMPLETED** (2026-09-30) | Cloud Architecture & Secret Boundaries |
+| Phase D1 | Production PostgreSQL on Render | **COMPLETED** (2026-09-30) | Managed Cloud Database |
+| Phase D2 | Dockerize Spring Boot Backend | **COMPLETED** (2026-10-01) | Multi-Stage Non-Root Alpine Container |
+| Phase D3 | Deploy Backend to Render | **COMPLETED** (2026-10-01) | Managed Web Service & JDBC Link |
+| Phase D4 | Backend Production Verification | **COMPLETED** (2026-10-01) | Cloud Invariant & API Verification |
+| Phase D5 | Configure Frontend for Production | **COMPLETED** (2026-10-01) | Vercel SPA Fallback & API Wiring |
+| Phase D6 | Deploy Frontend to Vercel | **COMPLETED** (2026-10-01) | Edge Static Distribution & SSL |
+| Phase D7 | Full-Stack Integration Verification | **COMPLETED** (2026-10-01) | Live Cloud User Journey Smoke Test |
+| Phase D8 | Production Hardening & Documentation | **COMPLETED** (2026-10-03) | CORS PATCH Hardening & Doc Sync |
 
 See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the full phased plan and deliverables.
 

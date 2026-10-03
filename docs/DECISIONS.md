@@ -2513,6 +2513,86 @@ Negative
 
 ---
 
+# ADR-038
+
+## Title
+
+CORS Allowed Methods Extension for RESTful Account Lifecycle State Transitions (`PATCH`)
+
+### Status
+
+Accepted
+
+### Context
+
+During Phase D7 production verification between the live Vercel frontend (`https://event-sourced-ledger.vercel.app`) and the live Render Spring Boot backend (`https://event-sourced-ledger-backend.onrender.com`), standard collection queries, account detail lookups, deposits, withdrawals, and account-to-account transfers executed successfully over cross-origin HTTPS because they utilize standard `GET` and `POST` HTTP verbs.
+
+However, invoking account lifecycle state transitions in `AccountController`:
+- `PATCH /accounts/{id}/freeze`
+- `PATCH /accounts/{id}/activate`
+- `PATCH /accounts/{id}/close`
+
+failed browser cross-origin preflight checks with HTTP 403 Forbidden.
+
+Investigation revealed that `CorsConfig.java` explicitly defined allowed methods as:
+```java
+registry.addMapping("/**")
+        .allowedOrigins(allowedOrigins)
+        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
+        .allowedHeaders("*")
+        .maxAge(3600);
+```
+omitting `PATCH`. When modern web browsers initiate CORS preflight (`OPTIONS` request with header `Access-Control-Request-Method: PATCH`), Spring MVC's `DefaultCorsProcessor` checks the requested method against the configured `allowedMethods` allowlist. Because `PATCH` was absent, Spring MVC rejected the preflight with HTTP 403 Forbidden and omitted the `Access-Control-Allow-Origin` header, causing the browser to abort the state mutation.
+
+### Decision
+
+Add `"PATCH"` to the allowed HTTP methods array in `com.ledger.config.CorsConfig`:
+```java
+registry.addMapping("/**")
+        .allowedOrigins(allowedOrigins)
+        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
+        .allowedHeaders("*")
+        .maxAge(3600);
+```
+
+Extend `CorsConfigTest` with dedicated MockMvc slice tests verifying:
+1. CORS preflight (`OPTIONS`) with `Access-Control-Request-Method: PATCH` returns HTTP 200 OK, `Access-Control-Allow-Origin`, and `Access-Control-Allow-Methods` containing `PATCH`.
+2. Actual cross-origin `PATCH` requests succeed with HTTP 200 OK and expected response bodies.
+
+### Alternatives Considered
+
+1. **Alter Account Lifecycle Endpoints to Use `POST`:**  
+   *Rejected:* Violates established REST API design standards documented in `API_GUIDELINES.md` and frozen in Phase 1 / Phase 8. Lifecycle operations are partial state transitions, for which `PATCH` is the semantically correct HTTP method. Altering endpoint mappings would introduce breaking contract changes across backend and frontend clients.
+
+2. **Configure CORS Wildcard Methods (`*`):**  
+   *Rejected:* Using a wildcard method weakens the security posture and creates unnecessary permissiveness. A strict, explicit allowlist of authorized HTTP verbs aligns with the principle of least privilege.
+
+3. **Controller-Level `@CrossOrigin` Annotations:**  
+   *Rejected:* Scattering CORS annotations across controllers introduces configuration drift, duplicate origin declarations, and maintenance overhead. A centralized `WebMvcConfigurer` bean provides uniform, application-wide policy enforcement.
+
+### Rationale
+
+Supporting `PATCH` directly in the centralized CORS configuration aligns the cross-origin infrastructure with the existing REST API specification. This resolves the browser preflight rejection cleanly without altering business endpoints, changing DTO wire contracts, or requiring any frontend application code modifications.
+
+### Consequences
+
+Positive
+- Account lifecycle operations (`/freeze`, `/activate`, `/close`) execute reliably from authorized cross-origin browser origins.
+- Preserves REST architectural semantics and frozen backend API contracts.
+- Centralized configuration and slice testing ensure future endpoints utilizing `PATCH` function without CORS regressions.
+
+Negative
+- Required a container rebuild and deployment to Render to propagate updated CORS headers to the production runtime.
+
+### Verification
+
+- Backend unit test suite passes 251/251 tests (including 2 new tests verifying `PATCH` preflight and execution).
+- Production Render deployment succeeds.
+- Live `OPTIONS` preflight with `Access-Control-Request-Method: PATCH` returns HTTP 200 OK with `Access-Control-Allow-Origin: https://event-sourced-ledger.vercel.app` and `Access-Control-Allow-Methods` containing `PATCH`.
+- Full Freeze → Activate account lifecycle verified live through the production Vercel UI with zero console or network CORS errors.
+
+---
+
 # Future Decisions
 
 This document will continue to evolve.

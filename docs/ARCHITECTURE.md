@@ -879,7 +879,93 @@ Persistence Layer & Repositories
 
 ---
 
-# 19. Future Architecture Evolution
+# 19. Production Cloud Deployment Topology & Security Architecture
+
+The production implementation deploys the independently verified Spring Boot backend and React single-page application into an isolated, cloud-native hosting topology that preserves backend financial authority, double-entry invariance, and relational database integrity.
+
+```text
+                               Users & Browsers
+                                      │
+                                      ▼
+                        Vercel Global Edge Network
+                       React 19 / TypeScript / Vite
+                      Single-Page Application (SPA)
+                        - Direct deep-link rewrites (vercel.json)
+                        - Zero client-side financial calculations
+                        - Static bundle compiled with VITE_API_BASE_URL
+                                      │
+                                      │ HTTPS REST (TLS)
+                                      │ REST API Calls & CORS Preflight
+                                      ▼
+                           Render Cloud Platform
+                       Dockerized Spring Boot Backend
+                         - Eclipse Temurin OpenJDK 21 Alpine runtime
+                         - Unprivileged non-root user (UID/GID 10001)
+                         - Dynamic PORT binding (server.port=${PORT:8080})
+                         - Centralized CORS validation (CorsConfig.java)
+                         - Sole authoritative source of financial truth
+                                      │
+                                      │ JDBC over SSL (sslmode=require)
+                                      │ Pessimistic Row Locking (PESSIMISTIC_WRITE)
+                                      ▼
+                           Render Cloud Platform
+                        Managed PostgreSQL Database
+                         - Durable ACID relational storage
+                         - Append-only event store & double-entry ledger
+                         - Automated Flyway schema migrations (V1–V5)
+                         - Hibernate schema validation (ddl-auto=validate)
+```
+
+## 19.1 Architectural Layers & Hosting Responsibilities
+
+1. **Frontend Presentation Tier (Vercel Edge Network):**
+   - Serves the compiled static React + TypeScript single-page application globally via edge CDN caching.
+   - SPA client-side routing is supported across deep links (`/dashboard`, `/accounts`, `/accounts/:id/overview`, `/accounts/:id/audit`) via edge rewrite rules in `vercel.json` targeting `/index.html`.
+   - The client application operates strictly as a presentation and command-dispatch layer. It performs **zero financial calculations**, **zero balance reconstructions**, and **zero optimistic mutations**. All balances are retrieved from authoritative backend audit queries.
+
+2. **Backend Application Tier (Render Web Service):**
+   - Packaged as a lightweight multi-stage Docker container (`eclipse-temurin:21-jre-alpine`) executing under dedicated unprivileged system credentials (`ledgeruser:ledgergroup`, UID/GID `10001:10001`).
+   - Serves as the sole authoritative core enforcing double-entry invariants, balance derivation, event store appending, and pessimistic concurrency control.
+   - Binds dynamically to Render's assigned port via `server.port=${PORT:8080}`.
+   - Operates under the `prod` Spring profile, suppressing SQL console logging and restricting web framework logging to `WARN`.
+
+3. **Persistence Tier (Render Managed PostgreSQL):**
+   - Authoritative relational store providing ACID transaction guarantees and row-level locking.
+   - Flyway executes schema migrations `V1` through `V5` on startup.
+   - System contra-account `SYS-CASH` (ID 1) is seeded and isolated from public customer APIs.
+   - Hibernate schema validation (`ddl-auto=validate`) enforces entity-to-schema alignment on startup.
+
+## 19.2 Cross-Origin Resource Sharing (CORS) Security Boundary
+
+Because the frontend is hosted on Vercel (`*.vercel.app`) and the backend is hosted on Render (`*.onrender.com`), all browser-initiated communications cross domain boundaries.
+
+1. **Centralized Configuration:**  
+   Cross-origin policies are managed exclusively in `com.ledger.config.CorsConfig` via Spring MVC's `WebMvcConfigurer`. No controller-level `@CrossOrigin` annotations are used.
+2. **Explicit Allowed Methods:**  
+   Preflight `OPTIONS` requests validate incoming method requests against an explicit allowlist:
+   `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `HEAD`.  
+   `PATCH` is explicitly included to support RESTful account lifecycle transitions (`/freeze`, `/activate`, `/close`).
+3. **Environment-Driven Allowed Origins:**  
+   Allowed origins are driven by the `cors.allowed-origins` configuration property (mapped to environment variable `CORS_ALLOWED_ORIGINS`). In production, this allowlist is restricted to authorized deployment domains (e.g. `https://event-sourced-ledger.vercel.app`), strictly rejecting unauthorized origins with `HTTP 403 Forbidden` and zero `Access-Control-Allow-Origin` headers.
+4. **Preflight Caching:**  
+   Preflight responses specify `maxAge(3600)` (1 hour), optimizing network overhead for interactive operator workflows.
+
+## 19.3 Environment Variable & Secret Boundary Separation
+
+The production deployment strictly segregates public build-time parameters from private runtime infrastructure secrets:
+
+| Variable | Scope | Target Environment | Purpose & Boundary Constraints |
+|---|---|---|---|
+| `VITE_API_BASE_URL` | Public / Build-Time | Vercel Project Settings | Specifies the HTTPS base URL of the Render backend. Baked into static JS bundles at build time; contains zero sensitive credentials. |
+| `PORT` | Private / Runtime | Render Backend Service | Dynamic port assigned by Render container runtime; Spring Boot binds via `${PORT:8080}`. |
+| `CORS_ALLOWED_ORIGINS` | Private / Runtime | Render Backend Service | Comma-separated list of authorized frontend origins permitted to initiate cross-origin requests. |
+| `LEDGER_DB_URL` | Private / Runtime | Render Backend Service | Secure JDBC connection string to Render PostgreSQL with SSL enforcement (`?sslmode=require`). |
+| `LEDGER_DB_USERNAME` | Private / Runtime | Render Backend Service | Managed database user credentials. Isolated strictly to backend JVM memory. |
+| `LEDGER_DB_PASSWORD` | Private / Runtime | Render Backend Service | Managed database password. Never exposed to frontend clients, repositories, or container image layers. |
+
+---
+
+# 20. Future Architecture Evolution
 
 The current architecture intentionally focuses on a single-service implementation.
 
@@ -900,7 +986,7 @@ These enhancements should extend the existing architecture rather than replace i
 
 ---
 
-# 20. Guiding Philosophy
+# 21. Guiding Philosophy
 
 > **\"Financial systems should preserve history, not overwrite it.\"**
 
